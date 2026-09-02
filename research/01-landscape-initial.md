@@ -12,8 +12,12 @@ land in subsequent files in this folder.
 - Announced **16 September 2025** with **60+ launch partners** incl. Mastercard, PayPal,
   Coinbase, American Express, Salesforce.
 - Core abstraction: the **Mandate** — a digitally signed statement from the consumer defining
-  exactly what the agent may spend, on what, with what limits, for how long. Three types:
-  **Intent Mandate, Cart Mandate, Payment Mandate**.
+  exactly what the agent may spend, on what, with what limits, for how long.
+  > ⚠️ **CORRECTED by [06-protocols.md](06-protocols.md):** the mandate types recorded here
+  > ("Intent / Cart / Payment") are **stale**. The shipped SDK has `CheckoutMandate` /
+  > `OpenCheckoutMandate` / `PaymentMandate` / `OpenPaymentMandate`; **`IntentMandate` no longer
+  > exists**. Mandates are **SD-JWT VCs (RFC 9901)**, not W3C VC-JSON-LD. Also: **AP2 and UCP have
+  > merged at the schema level** — AP2 is the credential layer, UCP the commerce object layer.
 - The mandate **travels with the transaction**, so networks and merchants can verify the agent
   had real authorization rather than merely possessing credentials.
 - **Payment-method agnostic** — extension points for card networks, ACH/bank transfer,
@@ -29,8 +33,12 @@ Sources: https://cloud.google.com/blog/products/ai-machine-learning/announcing-a
 - Open standard maintained by **OpenAI and Stripe**; defines how agents interact with
   businesses to complete purchases for a buyer.
 - Building blocks: **agentic checkout** (cart management, fulfillment options, payment),
-  **cart and feed** (catalog browsing), **secure payment token delegation**, **OAuth 2.0
-  auth delegation**.
+  **cart and feed** (catalog browsing), **secure payment token delegation**.
+  > ⚠️ **CORRECTED by [06-protocols.md](06-protocols.md):** **there is no OAuth 2.0 in the released
+  > ACP spec** — `delegate_authentication` is *"3D Secure 2 (3DS2) authentication only"*. Stripe's
+  > marketing page claims OAuth; the spec does not contain it. The scoping object is named
+  > **`Allowance`**, not "shared payment token". And ACP was **demoted to a discovery protocol** in
+  > March 2026 — see [05-market-data.md](05-market-data.md).
 - **Already live in production**: powers **Instant Checkout in ChatGPT** — US users buying
   from US **Etsy** sellers and **1M+ Shopify** merchants (Glossier, Vuori, Spanx, SKIMS).
 - Payment mechanism: **Shared Payment Token (SPT)** — lets ChatGPT initiate payment without

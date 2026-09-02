@@ -115,8 +115,15 @@ https://www.humansecurity.com/learn/blog/ai-crawler-spoofing-chatgpt-mistral-per
   (ChatGPT Atlas, Claude in Chrome, Perplexity Browser, Gemini Agent Mode, Brave Leo, Arc Browse
   for Me). AWS WAF Bot Control added support **Nov 2025**; Vercel, Akamai, Stytch, Shopify followed.
   Cloudflare AI bot requests exceed **10 billion/week**.
-- ⚠️ **Critical gap: as of 18 Aug 2026 it is still an individual Internet-Draft — not even adopted
-  by an IETF working group — yet gatekeepers enforce it in production.**
+- ⚠️ ~~**Critical gap: as of 18 Aug 2026 it is still an individual Internet-Draft — not even adopted
+  by an IETF working group — yet gatekeepers enforce it in production.**~~
+  > ⚠️ **CORRECTED by [06-protocols.md](06-protocols.md):** this is **now stale**. A chartered IETF
+  > working group (`webbotauth`) exists and the document is **WG-adopted**:
+  > **`draft-ietf-webbotauth-httpsig-protocol-00`**, published **1 Sept 2026**, intended Standards
+  > Track. What *is* still individual-submission and NOT WG-adopted is the **agent registry**
+  > (`draft-meunier-webbotauth-registry-03`). And critically, the protocol states outright:
+  > **"It is not a revocation mechanism"** — it defines no authorization, no delegation, and no way
+  > for one origin to convey an opinion about an agent to another.
 - Practical reality: for most merchants identity is asserted by **user-agent string + IP/ASN
   reputation**, both trivially spoofable. Cryptographic signing exists but is unevenly adopted and
   unratified.
@@ -395,11 +402,15 @@ thing to a consensus control catalogue. Explicit audit-trail expectations:
 **Verifiable credentials for agent transactions — AP2 is the concrete spec**
 - **AP2**, Google-initiated, announced **16 Sep 2025** with **60+ launch partners**. Spec:
   https://ap2-protocol.org/
-- ⭐ **Mechanism maps almost exactly onto the judging bar:** AP2 **Mandates are W3C Verifiable
-  Credentials** — cryptographically signed claims. Each Mandate carries an **issuer** (user, agent
-  or merchant), a **subject** (transaction context), a **payload** (**Intent**, **Cart**, or
-  **Payment** data), and a **signature**. Three mandate types = **three gates**: intent scope →
-  cart contents → payment execution.
+- ⭐ **Mechanism maps almost exactly onto the judging bar:** AP2 Mandates are cryptographically
+  signed claims carrying an issuer, a transaction context, a payload and a signature, giving
+  successive **gates**: authorized scope → cart contents → payment execution.
+  > ⚠️ **CORRECTED by [06-protocols.md](06-protocols.md):** mandates are **SD-JWT VCs (RFC 9901)**,
+  > **not** W3C Verifiable Credentials, and the type names here are stale — the shipped set is
+  > `CheckoutMandate` / `OpenCheckoutMandate` / `PaymentMandate` / `OpenPaymentMandate` (+
+  > `CheckoutReceipt` / `PaymentReceipt`); **`IntentMandate` no longer exists**. Note also that
+  > AP2's `Item` is a **four-field stub** (`id`, `title`, `price`, `image_url`) with **no currency
+  > field**, so an AP2-signed cart signs a drastically reduced view of the cart.
 - **Dispute relevance, stated explicitly by the spec's proponents:** a merchant facing a chargeback
   can produce the **signed Intent Mandate authorizing the purchase scope**; AP2 is designed as a
   **non-repudiable cryptographic audit trail**.
