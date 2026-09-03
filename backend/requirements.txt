@@ -5,3 +5,4 @@ pyyaml
 cryptography
 httpx
 pytest
+python-dotenv

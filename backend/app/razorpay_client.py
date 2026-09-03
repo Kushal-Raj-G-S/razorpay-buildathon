@@ -7,6 +7,9 @@ simplest possible way to create a test order and payment link.
 """
 import os
 import httpx
+from dotenv import load_dotenv
+
+load_dotenv()  # reads backend/.env if present -- never committed, see .gitignore
 
 RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
