@@ -110,11 +110,25 @@ def is_agent_revoked(session: Session, agent_id: str) -> bool:
 
 
 def set_agent_revoked(session: Session, agent_id: str, revoked: bool) -> None:
+    """
+    Real bug, caught live by actually clicking the Revoke button in a
+    browser and then checking with a raw checkout call whether it did
+    anything: most agents in real traffic never call POST /agents/register
+    first (that's only needed for identity-signature verification, not to
+    exist) -- they just show up via /checkout-sessions. This function used
+    to silently no-op for any agent with no AgentRow yet, so revoking one
+    of them returned 200 OK and did NOTHING; the agent could still check
+    out immediately afterward. Now it creates the row if it doesn't exist,
+    same as any real "block this identity" action must be able to target
+    an identity it has never seen register anything.
+    """
     row = session.get(AgentRow, agent_id)
     if row:
         row.revoked = revoked
-        session.add(row)
-        session.commit()
+    else:
+        row = AgentRow(agent_id=agent_id, public_key_hex="", revoked=revoked)
+    session.add(row)
+    session.commit()
 
 
 # ---------- Receipts ----------

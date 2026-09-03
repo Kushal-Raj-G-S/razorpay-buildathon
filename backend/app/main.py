@@ -428,6 +428,14 @@ def get_digest(merchant_id: str, window_hours: int = 168, session: Session = Dep
         for r in receipt_rows
     ]
     stats = compute_digest(receipts_for_digest, len(escalations), window_hours)
+
+    # Awareness without an action is half the point -- the frontend needs
+    # to know, per agent, whether it's already revoked so it can offer
+    # "revoke" or show "already revoked" instead of a dead-end flag with
+    # nothing to do about it.
+    for agent in stats["agents"]:
+        agent["revoked"] = repo.is_agent_revoked(session, agent["agent_id"])
+
     return {"stats": stats}
 
 

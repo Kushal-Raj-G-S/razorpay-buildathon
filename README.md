@@ -41,7 +41,8 @@ for how the build was scoped.
    configured, only turns those already-decided flags into a plain-English sentence a
    non-technical shop owner can read in ten seconds. Exists because "write rules once and
    walk away" isn't enough — a small shop has no security team watching for a slow-burn
-   pattern the way a large company might.
+   pattern the way a large company might. Every flag has a real action next to it —
+   Revoke, right there — not just a warning with nowhere to act on it.
 
 ## Why no AI in the decision path
 
@@ -97,7 +98,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 43 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 46 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 
@@ -164,9 +165,16 @@ uploading a catalog is what turns this defense on.
 **No structured logging or error monitoring.** Default `print()` and uvicorn logs only —
 nothing like Sentry wired in.
 
-**`/red-team` doesn't show run history in the UI.** `GET /red-team/runs` exists and every
-run is persisted, but the frontend page only ever shows the run you just triggered, not
-past ones.
+**Revoking an agent used to silently fail for any agent that never called
+`POST /agents/register` first — the normal case, since an agent only needs to exist by
+showing up at `/checkout-sessions`.** `set_agent_revoked` only updated an existing
+`AgentRow` and never created one, so clicking Revoke on the Digest page returned 200 OK,
+the UI happily flipped to "Unrevoke", and the agent could still check out immediately
+afterward. Found by actually clicking the button in a browser and then checking with a
+separate curl call whether it did anything — it didn't. Fixed in
+[`backend/app/db/repo.py`](backend/app/db/repo.py); regression tests in
+[`backend/tests/test_agent_revocation.py`](backend/tests/test_agent_revocation.py) prove
+revoke and unrevoke both work for an agent with no prior registration.
 
 **The AI endpoints have no automated regression tests.** They're proven working via
 real, logged runs in git history (including two live model retirements caught and fixed

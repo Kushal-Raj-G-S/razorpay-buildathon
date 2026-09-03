@@ -202,6 +202,38 @@ def test_digest_reflects_a_real_blocked_checkout_and_narrates_it(client):
     assert narrated["narrative"]["headline"] == "stubbed"
 
 
+def test_digest_reflects_agent_revocation_status(client):
+    """
+    Flagging a problem is only half the point -- the merchant has to be
+    able to act on it. GET /digest must tell the frontend, per agent,
+    whether it's already revoked so a "Revoke" button can flip to
+    "Unrevoke" without a page reload.
+    """
+    merchant_id = "shop_digest_revoke"
+    key = register_merchant(client, merchant_id)
+    client.post("/policy", headers=auth(key), json={
+        "merchant_id": merchant_id, "max_order_value": 1000000, "deny_categories": [],
+    })
+
+    fake_items = [{"id": "ghost", "title": "Ghost", "price": 5000, "category": "clothing", "quantity": 1}]
+    sig = _sign("watched-agent", fake_items, client)
+    client.post("/checkout-sessions", json={
+        "merchant_id": merchant_id, "agent_id": "watched-agent",
+        "items": fake_items, "signature_hex": sig,
+    })
+
+    before = client.get("/digest", headers=auth(key), params={"merchant_id": merchant_id}).json()
+    agent_before = next(a for a in before["stats"]["agents"] if a["agent_id"] == "watched-agent")
+    assert agent_before["revoked"] is False
+
+    r = client.post("/agents/watched-agent/revoke", headers=auth(key), params={"merchant_id": merchant_id})
+    assert r.status_code == 200
+
+    after = client.get("/digest", headers=auth(key), params={"merchant_id": merchant_id}).json()
+    agent_after = next(a for a in after["stats"]["agents"] if a["agent_id"] == "watched-agent")
+    assert agent_after["revoked"] is True
+
+
 def test_digest_requires_merchant_auth(client):
     merchant_id = "shop_digest_auth"
     register_merchant(client, merchant_id)

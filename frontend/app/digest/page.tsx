@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { getDigest, narrateDigest, MERCHANT_ID, type DigestStats, type DigestNarrative } from "@/lib/api";
+import {
+  getDigest,
+  narrateDigest,
+  revokeAgent,
+  unrevokeAgent,
+  MERCHANT_ID,
+  type DigestStats,
+  type DigestNarrative,
+} from "@/lib/api";
 
 const SEVERITY_STYLE: Record<string, string> = {
   high: "badge-block",
@@ -30,6 +38,8 @@ export default function DigestPage() {
   const [narrateError, setNarrateError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [revokeBusy, setRevokeBusy] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +78,37 @@ export default function DigestPage() {
 
   const explanationFor = (agentId: string) =>
     narrative?.flag_explanations.find((f) => f.agent_id === agentId)?.plain_english;
+
+  // The whole point of surfacing a flag is that the merchant can act on
+  // it right here -- not read a warning, then go hunt for how to revoke
+  // an agent elsewhere. Updates the agent's `revoked` flag locally on
+  // success instead of a full refetch, so the button state flips
+  // immediately.
+  async function toggleRevoke(agentId: string, currentlyRevoked: boolean) {
+    setRevokeBusy(agentId);
+    setRevokeError("");
+    try {
+      if (currentlyRevoked) {
+        await unrevokeAgent(agentId, MERCHANT_ID);
+      } else {
+        await revokeAgent(agentId, MERCHANT_ID);
+      }
+      setStats((prev) =>
+        prev
+          ? {
+              ...prev,
+              agents: prev.agents.map((a) =>
+                a.agent_id === agentId ? { ...a, revoked: !currentlyRevoked } : a
+              ),
+            }
+          : prev
+      );
+    } catch (e) {
+      setRevokeError(`Couldn't update ${agentId}: ${(e as Error).message}`);
+    } finally {
+      setRevokeBusy(null);
+    }
+  }
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-16 sm:py-20">
@@ -147,28 +188,48 @@ export default function DigestPage() {
             <h2 className="label-eyebrow mb-3">
               Flags {stats.flags.length > 0 && `(${stats.flags.length})`}
             </h2>
+            {revokeError && (
+              <div className="card px-5 py-3.5 mb-3 text-sm bg-danger-soft text-danger">
+                {revokeError}
+              </div>
+            )}
             {stats.flags.length === 0 ? (
               <p className="text-sm text-ink-muted">Nothing flagged in this window.</p>
             ) : (
               <div className="space-y-3">
-                {stats.flags.map((f, i) => (
-                  <motion.div
-                    key={`${f.agent_id}-${f.flag_type}`}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="card p-5"
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className={`badge ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
-                      <span className="text-sm font-medium">{FLAG_LABEL[f.flag_type] ?? f.flag_type}</span>
-                      <span className="text-xs text-ink-faint ml-auto">agent: {f.agent_id}</span>
-                    </div>
-                    <p className="text-sm text-ink-muted">
-                      {explanationFor(f.agent_id) ?? f.detail}
-                    </p>
-                  </motion.div>
-                ))}
+                {stats.flags.map((f, i) => {
+                  const agent = stats.agents.find((a) => a.agent_id === f.agent_id);
+                  const isRevoked = agent?.revoked ?? false;
+                  return (
+                    <motion.div
+                      key={`${f.agent_id}-${f.flag_type}`}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      className="card p-5"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className={`badge ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
+                        <span className="text-sm font-medium">{FLAG_LABEL[f.flag_type] ?? f.flag_type}</span>
+                        <span className="text-xs text-ink-faint ml-auto">agent: {f.agent_id}</span>
+                      </div>
+                      <p className="text-sm text-ink-muted mb-3">
+                        {explanationFor(f.agent_id) ?? f.detail}
+                      </p>
+                      {isRevoked ? (
+                        <span className="badge badge-neutral text-xs">Access revoked</span>
+                      ) : (
+                        <button
+                          onClick={() => toggleRevoke(f.agent_id, false)}
+                          disabled={revokeBusy === f.agent_id}
+                          className="btn btn-danger text-xs px-3.5 py-1.5"
+                        >
+                          {revokeBusy === f.agent_id ? "Revoking…" : `Revoke ${f.agent_id}`}
+                        </button>
+                      )}
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -187,6 +248,7 @@ export default function DigestPage() {
                       <th className="px-5 py-3 font-normal">Allowed</th>
                       <th className="px-5 py-3 font-normal">Blocked</th>
                       <th className="px-5 py-3 font-normal">Last seen</th>
+                      <th className="px-5 py-3 font-normal">Access</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -198,6 +260,21 @@ export default function DigestPage() {
                         <td className="px-5 py-3 mono-num">{a.blocked}</td>
                         <td className="px-5 py-3 text-ink-faint">
                           {new Date(a.last_seen).toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3">
+                          <button
+                            onClick={() => toggleRevoke(a.agent_id, a.revoked)}
+                            disabled={revokeBusy === a.agent_id}
+                            className={`btn text-xs px-3 py-1 ${
+                              a.revoked ? "btn-ghost border border-border" : "btn-danger"
+                            }`}
+                          >
+                            {revokeBusy === a.agent_id
+                              ? "Working…"
+                              : a.revoked
+                              ? "Unrevoke"
+                              : "Revoke"}
+                          </button>
                         </td>
                       </tr>
                     ))}

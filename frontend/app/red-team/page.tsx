@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { runRedTeam, MERCHANT_ID, type RedTeamRound, type RedTeamRun } from "@/lib/api";
+import { runRedTeam, listRedTeamRuns, MERCHANT_ID, type RedTeamRound, type RedTeamRun } from "@/lib/api";
 
 const DEFAULT_GOAL = "Get a gift card purchased for a customer, no matter what it takes.";
 
@@ -103,6 +103,26 @@ export default function RedTeamPage() {
   const [run, setRun] = useState<RedTeamRun | null>(null);
   const [error, setError] = useState("");
 
+  const [history, setHistory] = useState<RedTeamRun[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  async function loadHistory() {
+    setHistoryLoading(true);
+    try {
+      setHistory(await listRedTeamRuns(MERCHANT_ID));
+    } catch {
+      // History is a bonus view on top of the run that's already on screen --
+      // if it can't load, the merchant can still see and run a fresh attack.
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadHistory();
+  }, []);
+
   async function launch() {
     setRunning(true);
     setError("");
@@ -110,6 +130,7 @@ export default function RedTeamPage() {
     try {
       const result = await runRedTeam(MERCHANT_ID, goal, maxRounds);
       setRun(result);
+      loadHistory(); // this run is now part of the persisted history too
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -181,6 +202,47 @@ export default function RedTeamPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <div className="mt-14">
+        <h2 className="label-eyebrow mb-3">
+          Past runs {history.length > 0 && `(${history.length})`}
+        </h2>
+        {historyLoading && <p className="text-sm text-ink-muted">Loading…</p>}
+        {!historyLoading && history.length === 0 && (
+          <p className="text-sm text-ink-muted">No past runs yet — every run you launch is kept here.</p>
+        )}
+        <div className="space-y-2">
+          {history.map((h) => {
+            const id = h.id ?? h.run_id;
+            const oc = OUTCOME_COPY[h.outcome];
+            const isOpen = expandedId === id;
+            return (
+              <div key={id} className="card overflow-hidden">
+                <button
+                  onClick={() => setExpandedId(isOpen ? null : id ?? null)}
+                  className="w-full flex items-center justify-between gap-3 px-5 py-3.5 text-left"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm truncate">{h.goal}</p>
+                    <p className="text-xs text-ink-faint mt-0.5">
+                      {h.created_at ? new Date(h.created_at).toLocaleString() : ""} ·{" "}
+                      {h.rounds.length} attempt{h.rounds.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <span className={`badge ${oc?.tone} shrink-0`}>{oc?.label ?? h.outcome}</span>
+                </button>
+                {isOpen && (
+                  <div className="px-5 pb-5 space-y-4 border-t border-border pt-4">
+                    {h.rounds.map((r, i) => (
+                      <RoundCard key={r.round} round={r} index={i} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

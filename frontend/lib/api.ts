@@ -279,6 +279,7 @@ export type AgentFootprint = {
   blocked_rules: Record<string, number>;
   first_seen: string;
   last_seen: string;
+  revoked: boolean;
 };
 
 export type DigestStats = {
