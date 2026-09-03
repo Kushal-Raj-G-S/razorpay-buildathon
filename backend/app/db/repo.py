@@ -187,6 +187,31 @@ def count_recent_orders(session: Session, merchant_id: str, agent_id: str, windo
     return len(session.exec(stmt).all())
 
 
+def list_receipts_since(session: Session, merchant_id: str, since: datetime) -> list[ReceiptRow]:
+    """
+    Raw receipt ROWS (not the Receipt pydantic model) in a time window --
+    feeds the digest (engine/digest.py). Returns the ORM rows directly
+    because the digest needs cart_items, the agent-claimed snapshot of
+    what was in the cart, which Receipt itself deliberately doesn't
+    carry (see models/receipt.py).
+    """
+    stmt = (
+        select(ReceiptRow)
+        .where(ReceiptRow.merchant_id == merchant_id, ReceiptRow.timestamp >= since)
+        .order_by(ReceiptRow.id)
+    )
+    return session.exec(stmt).all()
+
+
+def list_escalations_since(session: Session, merchant_id: str, since: datetime):
+    stmt = (
+        select(EscalationRow)
+        .where(EscalationRow.merchant_id == merchant_id, EscalationRow.created_at >= since)
+        .order_by(EscalationRow.id)
+    )
+    return session.exec(stmt).all()
+
+
 def summarize_agent_history(session: Session, merchant_id: str, agent_id: str, limit: int = 5) -> str:
     """
     A short, human-readable line per recent decision for this agent

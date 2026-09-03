@@ -182,6 +182,41 @@ Draft your recommendation."""
     return await _chat_json(ESCALATION_ADVISOR_SYSTEM_PROMPT, user_prompt)
 
 
+DIGEST_SYSTEM_PROMPT = """You explain a store's AI-agent shopping activity to a shop owner who is
+NOT a security expert and does not know terms like "policy", "rule engine", "catalog
+resolution", or "velocity limit". You are given facts and a list of flags that have ALREADY
+been decided by fixed code before you ever see them -- you do not get to decide what counts
+as suspicious, add a flag, remove one, or change its severity. Your only job is to explain,
+in plain everyday language, what happened and why it might matter to someone running a shop,
+not a security team.
+
+Never invent a fact that isn't in the data you were given. If there are no flags, say so
+plainly and reassuringly -- don't manufacture concern where there isn't any. If there are
+flags, be calm and specific, not alarmist -- this is information, not a siren.
+
+Respond with ONLY a JSON object of this exact shape:
+{
+  "headline": "<one short sentence, plain language, e.g. 'Quiet week -- nothing needs your attention'>",
+  "summary": "<2-4 sentences, plain language, for someone with zero security background>",
+  "flag_explanations": [{"agent_id": "<id>", "plain_english": "<one sentence explaining this one flag like
+                          you're talking to a shopkeeper, not an engineer>"}]
+}
+No explanation outside the JSON, no markdown."""
+
+
+async def summarize_digest(stats: dict) -> dict:
+    """
+    Turns engine/digest.py's deterministic output into plain language a
+    non-technical merchant can actually read. This is pure narration:
+    every number and every flag already exists before this is called: it
+    cannot add, remove, or reweight anything, and if this call fails or
+    isn't configured the caller still has the real stats to show without
+    it (see main.py's /digest).
+    """
+    user_prompt = json.dumps(stats, default=str)
+    return await _chat_json(DIGEST_SYSTEM_PROMPT, user_prompt)
+
+
 async def compile_policy_text(merchant_id: str, plain_english: str) -> dict:
     """
     Plain English rules -> our Policy schema. The caller MUST show this

@@ -14,6 +14,8 @@ Endpoints, in plain words:
   POST /agents/register           -- an agent proves it has a real key, ahead of time [public -- agents self-register]
   POST /checkout-sessions         -- an agent tries to buy something -- the bouncer runs here [public]
   GET  /receipts                  -- every past decision, signed               [merchant-only]
+  GET  /digest                    -- fast, deterministic "what's been happening" numbers + flags [merchant-only]
+  POST /digest/narrate            -- turns those numbers into plain language, AI, separate call  [merchant-only]
   GET  /escalations               -- orders waiting for a human to approve     [merchant-only]
   GET  /escalations/{id}/advice   -- AI drafts a recommendation, DECIDES NOTHING [merchant-only]
   POST /escalations/{id}/review   -- a human actually approves or rejects one  [merchant-only]
@@ -40,6 +42,16 @@ reads a transcript. Nothing an Advisor produces ever becomes a real
 decision by itself. Mixing these two tiers into one endpoint would blur
 the exact distinction the whole project is built to keep sharp.
 
+GET /digest is a deliberate hybrid, not a third tier: which patterns are
+worth a merchant's attention (an agent tripping the catalog-mismatch
+check, hitting a velocity cap, getting blocked repeatedly) is decided by
+fixed code in engine/digest.py, exactly like THE GATE -- AI is only used
+afterward, optionally, to turn those already-decided facts into plain
+sentences a non-technical shop owner can read in ten seconds. It exists
+because "the merchant writes rules once and never looks again" isn't
+enough: a small shop has no security team watching for a slow pattern
+the way a big company might, so the pattern has to surface itself.
+
 Every read/write to real data goes through app/db/repo.py, backed by a
 real database (SQLite by default, Postgres if DATABASE_URL is set) --
 not in-memory dictionaries that vanish on restart.
@@ -47,6 +59,7 @@ not in-memory dictionaries that vanish on restart.
 import json
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -57,6 +70,7 @@ from app.models.catalog import Catalog, Product, Variant
 from app.models.policy import Policy
 from app.models.receipt import Receipt
 from app.engine.evaluate import evaluate
+from app.engine.digest import compute_digest
 from app.engine.signing import sign_receipt
 from app.engine.identity import verify_agent_signature
 from app.razorpay_client import create_payment_link
@@ -377,6 +391,69 @@ def list_receipts_endpoint(merchant_id: str, session: Session = Depends(get_sess
                             authorization: str | None = Header(None)):
     _auth(merchant_id, session, authorization)
     return repo.list_receipts(session, merchant_id)
+
+
+@app.get("/digest")
+def get_digest(merchant_id: str, window_hours: int = 168, session: Session = Depends(get_session),
+                authorization: str | None = Header(None)):
+    """
+    The plain-language answer to "what's actually been happening at my
+    store" -- not a receipts list the merchant has to read line by line
+    and interpret themselves. Deliberately synchronous and AI-free: every
+    number and flag here is decided by fixed code (engine/digest.py), so
+    this responds fast regardless of whether AI is configured or slow.
+    See POST /digest/narrate for the plain-language version -- kept as a
+    separate call so a merchant sees real numbers immediately instead of
+    waiting on a live model call before seeing anything at all (measured
+    live at ~14s for a week of history -- too slow to gate the whole
+    page on).
+
+    window_hours defaults to 168 (one week).
+    """
+    _auth(merchant_id, session, authorization)
+
+    since = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    receipt_rows = repo.list_receipts_since(session, merchant_id, since)
+    escalations = repo.list_escalations_since(session, merchant_id, since)
+
+    receipts_for_digest = [
+        {
+            "agent_id": r.agent_id,
+            "decision": r.decision,
+            "rules_checked": r.rules_checked,
+            "cart_items": r.cart_items,
+            "cart_total": r.cart_total,
+            "timestamp": r.timestamp,
+        }
+        for r in receipt_rows
+    ]
+    stats = compute_digest(receipts_for_digest, len(escalations), window_hours)
+    return {"stats": stats}
+
+
+class DigestNarrateRequest(BaseModel):
+    merchant_id: str
+    stats: dict
+
+
+@app.post("/digest/narrate")
+async def narrate_digest(req: DigestNarrateRequest, session: Session = Depends(get_session),
+                          authorization: str | None = Header(None)):
+    """
+    Turns stats already computed by GET /digest into plain language for a
+    non-technical shop owner. Separate call, on purpose (see get_digest's
+    docstring) -- the frontend calls this only after the real numbers are
+    already on screen, same pattern as the escalation advisor
+    (GET /escalations/{id}/advice): AI narrates, nothing here decides or
+    changes what was already flagged.
+    """
+    _auth(req.merchant_id, session, authorization)
+
+    if not ai_client.is_configured():
+        raise HTTPException(503, "AI not configured -- set NVIDIA_API_KEY in backend/.env")
+
+    narrative = await ai_client.summarize_digest(req.stats)
+    return {"narrative": narrative}
 
 
 @app.get("/signing-public-key")

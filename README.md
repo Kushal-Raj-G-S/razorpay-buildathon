@@ -32,6 +32,16 @@ for how the build was scoped.
 6. **The whole decision engine is exposed as an MCP server**, the same protocol Razorpay's
    own Agent Studio (built on the Claude Agent SDK) uses to call tools — see
    [`backend/app/mcp_server.py`](backend/app/mcp_server.py).
+7. **A merchant doesn't have to read receipts one at a time to know what's going on** —
+   `/digest` (see [`backend/app/engine/digest.py`](backend/app/engine/digest.py)) turns a
+   window of activity into a footprint per agent (attempts, blocks, which rule caught them,
+   first/last seen) and a set of flags — an agent trying items that don't match the real
+   catalog, one hitting the order-frequency limit, one that kept getting blocked and kept
+   trying anyway. What counts as a flag is fixed code, same rule as checkout itself; AI, if
+   configured, only turns those already-decided flags into a plain-English sentence a
+   non-technical shop owner can read in ten seconds. Exists because "write rules once and
+   walk away" isn't enough — a small shop has no security team watching for a slow-burn
+   pattern the way a large company might.
 
 ## Why no AI in the decision path
 
@@ -57,7 +67,7 @@ backend/
     main.py        FastAPI routes. Every merchant-facing write requires
                     Authorization: Bearer <api_key> (see app/auth.py) — every agent-facing
                     route (checkout, catalog search) stays open, same as a real storefront.
-  tests/           29 tests, real HTTP integration tests via FastAPI's TestClient, not
+  tests/           43 tests, real HTTP integration tests via FastAPI's TestClient, not
                    just unit tests of internals. Run: pytest -q
 research/           Every claim behind every design decision, sourced.
 ```
@@ -87,9 +97,9 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 34 passing, no network dependency (Razorpay calls
-are stubbed in the test suite; the real integration is proven separately, live, in git
-history).
+**Tests:** `cd backend && pytest -q` — 43 passing, no network dependency (Razorpay calls
+and AI narration are stubbed in the test suite; the real integrations are proven
+separately, live, in git history).
 
 ## Running it with Docker
 
@@ -154,6 +164,22 @@ past ones.
 real, logged runs in git history (including two live model retirements caught and fixed
 mid-session — see commit history), but nothing in `pytest` calls the live NVIDIA API, so a
 third model retirement wouldn't be caught by CI. There is no CI, either.
+
+**The digest's flag set is intentionally small (three flag types) and only looks at one
+merchant's own history.** It catches an agent tripping the catalog-mismatch check, hitting a
+velocity cap, or getting blocked repeatedly and trying again — real, deterministic patterns,
+but not cross-merchant correlation (the same agent probing many different shops), not
+gradual drift in what an agent buys over weeks, and nothing behavioral beyond what the
+existing rule checks already look at. Built as the honest answer to a specific critique
+during the buildathon (a merchant who writes rules once and never looks again has no way to
+notice a pattern), not as a general anomaly-detection system. The first working version
+also had a real, live-discovered latency bug worth naming: it originally computed the
+plain-language AI summary inline before returning anything, which took ~14-20 seconds per
+call against a week of history — long enough that the page just sat on "loading." Fixed by
+splitting `/digest` (fast, deterministic, no AI) from `/digest/narrate` (the slow AI step,
+called separately once the real numbers are already on screen) — same pattern the
+escalation advisor already used, just not one this endpoint had been checked against until
+it was actually loaded in a browser.
 
 **Two real money-safety bugs were found and fixed by deliberately auditing for this class
 of mistake, not by chance** — see `backend/tests/test_money_safety.py` and its

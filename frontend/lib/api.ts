@@ -259,3 +259,57 @@ export function runRedTeam(merchantId: string, goal: string, maxRounds: number =
 export function listRedTeamRuns(merchantId: string) {
   return request<RedTeamRun[]>(`/red-team/runs?merchant_id=${merchantId}`, undefined, true);
 }
+
+// ---------- Digest: "what's actually been happening", not a log to read (merchant-only) ----------
+
+export type DigestFlag = {
+  severity: "high" | "medium" | "low";
+  agent_id: string;
+  flag_type: "catalog_mismatch" | "velocity_cap_hit" | "repeated_blocks";
+  count: number;
+  detail: string;
+};
+
+export type AgentFootprint = {
+  agent_id: string;
+  attempts: number;
+  allowed: number;
+  blocked: number;
+  escalated: number;
+  blocked_rules: Record<string, number>;
+  first_seen: string;
+  last_seen: string;
+};
+
+export type DigestStats = {
+  window_hours: number;
+  totals: { attempts: number; allowed: number; blocked: number; escalated: number };
+  escalations_pending_or_reviewed: number;
+  agents: AgentFootprint[];
+  flags: DigestFlag[];
+};
+
+export type DigestNarrative = {
+  headline: string;
+  summary: string;
+  flag_explanations: { agent_id: string; plain_english: string }[];
+};
+
+export function getDigest(merchantId: string, windowHours: number = 168) {
+  return request<{ stats: DigestStats }>(
+    `/digest?merchant_id=${merchantId}&window_hours=${windowHours}`,
+    undefined,
+    true
+  );
+}
+
+// Separate, slower call on purpose -- GET /digest above returns real
+// numbers fast (no AI in it); this narrates them afterward, same pattern
+// as getEscalationAdvice.
+export function narrateDigest(merchantId: string, stats: DigestStats) {
+  return request<{ narrative: DigestNarrative }>(
+    `/digest/narrate`,
+    { method: "POST", body: JSON.stringify({ merchant_id: merchantId, stats }) },
+    true
+  );
+}

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 
 const NAV_LINKS = [
+  { href: "/digest", label: "Digest" },
   { href: "/catalog", label: "Catalog" },
   { href: "/policy", label: "Rules" },
   { href: "/demo", label: "Try it" },
