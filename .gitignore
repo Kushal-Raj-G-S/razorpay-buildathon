@@ -45,3 +45,5 @@ desktop.ini
 logs/
 tmp/
 scratch/
+node_modules/
+.next/
