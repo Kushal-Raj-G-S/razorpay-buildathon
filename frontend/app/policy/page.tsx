@@ -2,7 +2,15 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { getPolicy, savePolicy, draftPolicyFromText, MERCHANT_ID, type Policy } from "@/lib/api";
+import {
+  getPolicy,
+  savePolicy,
+  draftPolicyFromText,
+  getPolicyHistory,
+  MERCHANT_ID,
+  type Policy,
+  type PolicyHistoryEntry,
+} from "@/lib/api";
 
 const DEFAULT_POLICY: Policy = {
   merchant_id: MERCHANT_ID,
@@ -69,6 +77,17 @@ export default function PolicyPage() {
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState("");
 
+  const [history, setHistory] = useState<PolicyHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+
+  function loadHistory() {
+    setHistoryLoading(true);
+    getPolicyHistory(MERCHANT_ID)
+      .then(setHistory)
+      .catch(() => {})
+      .finally(() => setHistoryLoading(false));
+  }
+
   useEffect(() => {
     getPolicy(MERCHANT_ID)
       .then((p) => {
@@ -77,6 +96,7 @@ export default function PolicyPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+    loadHistory();
   }, []);
 
   async function handleSave() {
@@ -88,9 +108,21 @@ export default function PolicyPage() {
       };
       await savePolicy(toSave);
       setStatus("Saved — these rules are live.");
+      loadHistory(); // this save is now part of the record too
     } catch (e) {
       setStatus(`Failed to save: ${(e as Error).message}`);
     }
+  }
+
+  // Loads a past version into the form -- does NOT save it. Same rule as
+  // the plain-English drafter: nothing from history becomes live rules
+  // until the merchant reviews it and clicks Save themselves.
+  function loadFromHistory(entry: PolicyHistoryEntry) {
+    setPolicy(entry.policy);
+    setCategoriesText(entry.policy.deny_categories.join(", "));
+    setStatus(
+      `Loaded rules from ${new Date(entry.saved_at).toLocaleString()} — review, then Save to make this active again.`
+    );
   }
 
   async function handleDraft() {
@@ -117,7 +149,7 @@ export default function PolicyPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-16 sm:py-20">
+    <div className="max-w-6xl mx-auto px-6 py-16 sm:py-20">
       <p className="label-eyebrow mb-3">Merchant policy</p>
       <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Your rules for AI agents</h1>
       <p className="text-ink-muted max-w-xl leading-relaxed mb-10">
@@ -125,6 +157,8 @@ export default function PolicyPage() {
         happens with money. Change anything, save, and it applies immediately.
       </p>
 
+      <div className="grid lg:grid-cols-[1fr_300px] gap-10 items-start">
+      <div className="min-w-0 max-w-3xl">
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -301,6 +335,42 @@ export default function PolicyPage() {
           </AnimatePresence>
         </div>
       </motion.div>
+      </div>
+
+      <div className="lg:sticky lg:top-8">
+        <p className="label-eyebrow mb-3">Saved rules, over time</p>
+        {historyLoading && <p className="text-sm text-ink-muted">Loading…</p>}
+        {!historyLoading && history.length === 0 && (
+          <p className="text-sm text-ink-muted">
+            Nothing saved yet — your first save will show up here.
+          </p>
+        )}
+        <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+          {history.map((entry, i) => (
+            <button
+              key={entry.id}
+              onClick={() => loadFromHistory(entry)}
+              className="card w-full text-left p-4 hover:border-accent-soft-border transition-colors"
+            >
+              <p className="text-xs text-ink-faint mb-1.5">
+                {new Date(entry.saved_at).toLocaleString()}
+                {i === 0 && <span className="badge badge-allow ml-2 text-[10px] px-1.5 py-0.5">current</span>}
+              </p>
+              <p className="text-sm font-medium mono-num">
+                ₹{(entry.policy.max_order_value / 100).toLocaleString()} limit
+              </p>
+              <p className="text-xs text-ink-muted mt-0.5">
+                {entry.policy.deny_categories.length > 0
+                  ? `${entry.policy.deny_categories.length} banned categor${entry.policy.deny_categories.length === 1 ? "y" : "ies"}`
+                  : "no banned categories"}
+                {" · "}
+                COD {entry.policy.allow_cod_for_agents ? "on" : "off"}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+      </div>
     </div>
   );
 }

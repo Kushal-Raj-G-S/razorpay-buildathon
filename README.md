@@ -27,6 +27,9 @@ for how the build was scoped.
    category is overwritten with the merchant's real listing before any rule runs.
 4. **Every decision is signed** (Ed25519) and persisted, allow or block or escalate, with
    the exact rule that fired.
+   Every saved policy also keeps a full version history — no more rewriting the same rules
+   from scratch to tweak one number; past versions are listed and can be reloaded (never
+   auto-applied — reloading fills the form, you still click Save).
 5. **A merchant can send a real autonomous AI to attack their own rules** — `/red-team` —
    and get back a full, unscripted transcript of what it tried and why it failed.
 6. **The whole decision engine is exposed as an MCP server**, the same protocol Razorpay's
@@ -98,7 +101,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 46 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 49 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 

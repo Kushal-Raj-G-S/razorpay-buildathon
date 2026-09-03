@@ -11,6 +11,7 @@ Endpoints, in plain words:
   POST /policy                    -- shop owner saves their rules directly     [merchant-only]
   POST /policy/draft-from-text    -- AI drafts rules from plain English        [merchant-only, does NOT save]
   GET  /policy/{merchant_id}      -- read the current rules                    [public -- agents need this]
+  GET  /policy/{merchant_id}/history -- every past saved version, most recent first [merchant-only]
   POST /agents/register           -- an agent proves it has a real key, ahead of time [public -- agents self-register]
   POST /checkout-sessions         -- an agent tries to buy something -- the bouncer runs here [public]
   GET  /receipts                  -- every past decision, signed               [merchant-only]
@@ -280,6 +281,23 @@ def get_policy_endpoint(merchant_id: str, session: Session = Depends(get_session
     if not policy:
         raise HTTPException(404, "no policy set for this merchant yet")
     return policy
+
+
+@app.get("/policy/{merchant_id}/history")
+def get_policy_history_endpoint(merchant_id: str, session: Session = Depends(get_session),
+                                 authorization: str | None = Header(None)):
+    """
+    Every past saved version of this merchant's rules, most recent
+    first -- merchant-only, since old spending limits are exactly as
+    sensitive as the current ones. POST /policy has no separate
+    "restore" action on purpose: loading a past version into the form
+    and clicking Save again goes through the exact same review-then-save
+    path as any other change, rather than a second, less-checked way to
+    make rules live.
+    """
+    _auth(merchant_id, session, authorization)
+    rows = repo.list_policy_history(session, merchant_id)
+    return [{"id": r.id, "saved_at": r.saved_at, "policy": r.snapshot} for r in rows]
 
 
 # ---------- Agent identity ----------

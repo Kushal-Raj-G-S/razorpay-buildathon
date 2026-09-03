@@ -31,6 +31,23 @@ class PolicyRow(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_now)
 
 
+class PolicyHistoryRow(SQLModel, table=True):
+    """
+    Every time a policy is saved, a full snapshot lands here too --
+    PolicyRow above only ever holds the current one, overwritten on
+    every save with no trace of what it used to say. A merchant asked
+    for this directly: rewriting the same rules from scratch every time
+    they want to tweak one number is real friction, and there was no way
+    to see what changed or when. Append-only, never edited or deleted.
+    """
+    __tablename__ = "policy_history"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    merchant_id: str = Field(index=True)
+    snapshot: dict = Field(sa_column=Column(JSON))  # full Policy.model_dump() at save time
+    saved_at: datetime = Field(default_factory=_now)
+
+
 class AgentRow(SQLModel, table=True):
     __tablename__ = "agents"
 

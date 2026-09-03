@@ -8,7 +8,7 @@ session.py's DATABASE_URL.
 from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select
 from app.db.models import (
-    PolicyRow, AgentRow, ReceiptRow, EscalationRow, ProductRow, SigningKeyRow,
+    PolicyRow, PolicyHistoryRow, AgentRow, ReceiptRow, EscalationRow, ProductRow, SigningKeyRow,
     MerchantRow, IdempotencyRow, RedTeamRunRow,
 )
 from app.models.policy import Policy
@@ -67,7 +67,23 @@ def save_policy(session: Session, policy: Policy) -> None:
         session.add(existing)
     else:
         session.add(PolicyRow(**data))
+
+    # Append-only snapshot, every save, never overwritten -- see
+    # PolicyHistoryRow's docstring. Kept as a second insert in the same
+    # commit rather than folded into PolicyRow so the "current" read
+    # (get_policy) stays a single cheap row lookup, not a query over history.
+    session.add(PolicyHistoryRow(merchant_id=policy.merchant_id, snapshot=policy.model_dump()))
     session.commit()
+
+
+def list_policy_history(session: Session, merchant_id: str, limit: int = 20) -> list[PolicyHistoryRow]:
+    stmt = (
+        select(PolicyHistoryRow)
+        .where(PolicyHistoryRow.merchant_id == merchant_id)
+        .order_by(PolicyHistoryRow.id.desc())
+        .limit(limit)
+    )
+    return session.exec(stmt).all()
 
 
 def get_policy(session: Session, merchant_id: str) -> Policy | None:

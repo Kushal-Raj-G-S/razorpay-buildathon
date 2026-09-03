@@ -83,6 +83,16 @@ export function savePolicy(policy: Policy) {
   );
 }
 
+export type PolicyHistoryEntry = {
+  id: number;
+  saved_at: string;
+  policy: Policy;
+};
+
+export function getPolicyHistory(merchantId: string) {
+  return request<PolicyHistoryEntry[]>(`/policy/${merchantId}/history`, undefined, true);
+}
+
 // ---------- Receipts (merchant-only -- it's their business data) ----------
 
 export function listReceipts(merchantId: string) {
