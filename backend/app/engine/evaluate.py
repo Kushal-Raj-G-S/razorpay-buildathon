@@ -47,6 +47,21 @@ def check_max_units_per_sku(cart: Cart, policy: Policy) -> RuleResult:
     return RuleResult(rule_name="max_units_per_sku", passed=True, detail="quantities within limit")
 
 
+def check_identity_verified(policy: Policy, identity_verified: bool) -> RuleResult:
+    """
+    The identity check (see engine/identity.py). If the shop owner
+    requires proof of identity and the agent didn't provide a valid
+    signature, the whole cart is blocked -- no matter what else is in it.
+    """
+    if policy.require_signed_identity and not identity_verified:
+        return RuleResult(
+            rule_name="identity_verified",
+            passed=False,
+            detail="agent did not present a valid signature -- cannot confirm who this really is",
+        )
+    return RuleResult(rule_name="identity_verified", passed=True, detail="identity confirmed or not required")
+
+
 # Every rule function goes in this list. Adding a new rule later = write
 # one function above, add its name here. Nothing else changes.
 ALL_CHECKS = [
@@ -56,13 +71,14 @@ ALL_CHECKS = [
 ]
 
 
-def evaluate(cart: Cart, policy: Policy, agent_id: str) -> Receipt:
+def evaluate(cart: Cart, policy: Policy, agent_id: str, identity_verified: bool = True) -> Receipt:
     """
     Run every check. If even ONE fails, the whole cart is blocked.
     This matches AP2's own rule: an unknown or failing check always
     means "fail closed", never "let it through and hope for the best".
     """
     results = [check(cart, policy) for check in ALL_CHECKS]
+    results.append(check_identity_verified(policy, identity_verified))
 
     if any(not r.passed for r in results):
         decision = Decision.BLOCK

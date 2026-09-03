@@ -12,6 +12,10 @@ policies: dict[str, Policy] = {}
 receipts: list[Receipt] = []
 revoked_agents: set[str] = set()
 
+# agent_id -> public key (hex). An agent must register here before it
+# can ever pass the identity check.
+registered_agents: dict[str, str] = {}
+
 # Keys generated once when the server starts (see main.py)
 signing_private_key: bytes | None = None
 signing_public_key: bytes | None = None

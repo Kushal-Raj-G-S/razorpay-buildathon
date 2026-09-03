@@ -20,6 +20,7 @@ from app.models.catalog import Catalog
 from app.models.policy import Policy
 from app.engine.evaluate import evaluate
 from app.engine.signing import generate_keypair, sign_receipt
+from app.engine.identity import verify_agent_signature
 from app.razorpay_client import create_payment_link
 from app import storage
 
@@ -99,12 +100,28 @@ def get_policy(merchant_id: str):
     return policy
 
 
+# ---------- Agent identity ----------
+
+class AgentRegisterRequest(BaseModel):
+    agent_id: str
+    public_key_hex: str
+
+
+@app.post("/agents/register")
+def register_agent(req: AgentRegisterRequest):
+    """An agent must do this once, ahead of time, before it can ever
+    pass the identity check on a real checkout."""
+    storage.registered_agents[req.agent_id] = req.public_key_hex
+    return {"status": "registered", "agent_id": req.agent_id}
+
+
 # ---------- The main event: checkout ----------
 
 class CheckoutRequest(BaseModel):
     merchant_id: str
     agent_id: str
     items: list[CartItem]
+    signature_hex: str | None = None  # signs the exact `items` list, see engine/identity.py
 
 
 @app.post("/checkout-sessions")
@@ -116,9 +133,15 @@ async def checkout(req: CheckoutRequest):
     if not policy:
         raise HTTPException(404, "merchant has not set a policy -- refusing to guess")
 
+    # Was this cart really signed by the agent it claims to be?
+    identity_verified = False
+    public_key_hex = storage.registered_agents.get(req.agent_id)
+    if public_key_hex and req.signature_hex:
+        identity_verified = verify_agent_signature(req.items, req.signature_hex, public_key_hex)
+
     cart = Cart(id=f"cart_{len(storage.receipts)+1}", merchant_id=req.merchant_id, items=req.items)
 
-    receipt = evaluate(cart, policy, agent_id=req.agent_id)
+    receipt = evaluate(cart, policy, agent_id=req.agent_id, identity_verified=identity_verified)
     signed_receipt = sign_receipt(receipt, storage.signing_private_key)
     storage.receipts.append(signed_receipt)
 
