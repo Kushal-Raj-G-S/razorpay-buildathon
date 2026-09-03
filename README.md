@@ -101,7 +101,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 49 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 50 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 
@@ -182,7 +182,21 @@ revoke and unrevoke both work for an agent with no prior registration.
 **The AI endpoints have no automated regression tests.** They're proven working via
 real, logged runs in git history (including two live model retirements caught and fixed
 mid-session — see commit history), but nothing in `pytest` calls the live NVIDIA API, so a
-third model retirement wouldn't be caught by CI. There is no CI, either.
+third model retirement wouldn't be caught by CI. There is no CI, either. This exact gap is
+what let the policy drafter silently ignore two whole fields for a while: `allow_cod_for_agents`
+and `max_orders_per_agent_per_window`/`velocity_window_minutes` were added to the `Policy`
+model for the India-specific rules, but `POLICY_SYSTEM_PROMPT` in `ai_client.py` was never
+updated to match, and its own instructions told the model to silently drop anything outside
+its schema — so a merchant typing "allow cash on delivery" or "no more than 3 orders an
+hour" would have gotten a draft that quietly ignored both. Found by actually typing that
+sentence into the Rules page and checking the saved policy against what was typed, not by
+reading the prompt and assuming it was current. Fixed by expanding the schema and its
+interpretation rules to cover all eight `Policy` fields, verified live afterward with the
+exact same sentence. A static guard now exists for this exact class of bug —
+`backend/tests/test_policy_prompt_schema_sync.py` fails if `Policy` ever gains a field
+`POLICY_SYSTEM_PROMPT` doesn't mention, no live model call needed. It can't verify the
+model actually *uses* a field correctly, only that the prompt hasn't silently fallen behind
+the schema again.
 
 **The digest's flag set is intentionally small (three flag types) and only looks at one
 merchant's own history.** It catches an agent tripping the catalog-mismatch check, hitting a

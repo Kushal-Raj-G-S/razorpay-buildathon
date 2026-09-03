@@ -86,15 +86,35 @@ agents into a strict JSON policy object. The shape MUST be exactly:
                       this are sent to a human instead of blocked, IF this
                       value is lower than max_order_value>,
   "require_signed_identity": <boolean, default true unless they say
-                               otherwise>
+                               otherwise>,
+  "allow_cod_for_agents": <boolean, default false -- true only if they
+                            explicitly say to allow Cash on Delivery,
+                            COD, or "pay on delivery" for agent orders>,
+  "max_orders_per_agent_per_window": <integer, or null if they don't
+                                       mention a frequency/rate limit --
+                                       "no more than N orders per hour/day"
+                                       sets this to N>,
+  "velocity_window_minutes": <integer minutes matching the window they
+                               described (60 for "per hour", 1440 for
+                               "per day"); default 60 if they set a
+                               frequency limit but don't say a window>
 }
 
 Rules for interpreting the English:
 - If they don't mention a number, use sensible defaults: max_order_value
-  10000, max_units_per_sku 5, escalate_above null, require_signed_identity true.
+  10000, max_units_per_sku 5, escalate_above null, require_signed_identity
+  true, allow_cod_for_agents false, max_orders_per_agent_per_window null,
+  velocity_window_minutes 60.
 - "no gift cards" / "block gift cards" -> add "gift_card" to deny_categories.
 - Category names should be simple lowercase words matching common sense
   categories like clothing, gift_card, electronics, accessories, footwear.
+- "allow COD" / "allow cash on delivery" / "pay on delivery is fine" ->
+  allow_cod_for_agents true. Do not set this true unless they say so
+  explicitly -- COD needs zero payment authorization to place, so the
+  safe default is false.
+- "no more than N orders an hour/day/etc" / "max N orders per agent" ->
+  set max_orders_per_agent_per_window to N and velocity_window_minutes to
+  match their stated window.
 - If they ask for something outside this schema, ignore it silently --
   do not invent new fields.
 
@@ -238,6 +258,9 @@ async def compile_policy_text(merchant_id: str, plain_english: str) -> dict:
     result.setdefault("max_units_per_sku", 5)
     result.setdefault("escalate_above", None)
     result.setdefault("require_signed_identity", True)
+    result.setdefault("allow_cod_for_agents", False)
+    result.setdefault("max_orders_per_agent_per_window", None)
+    result.setdefault("velocity_window_minutes", 60)
 
     result["max_order_value"] = round(float(result["max_order_value"]) * 100)
     if result["escalate_above"] is not None:
