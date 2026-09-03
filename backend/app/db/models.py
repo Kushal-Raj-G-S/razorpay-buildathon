@@ -114,6 +114,25 @@ class IdempotencyRow(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
+class RedTeamRunRow(SQLModel, table=True):
+    """
+    A real, persisted record of an autonomous AI agent trying to talk
+    its way past this merchant's rules -- not a throwaway script output.
+    Every round is stored: what the agent tried, why it thought that
+    would work, and exactly which rule caught it (or didn't). A merchant
+    can run this against their own store at any time and keep the
+    history as evidence their gate actually holds.
+    """
+    __tablename__ = "red_team_runs"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    merchant_id: str = Field(index=True)
+    goal: str
+    rounds: list = Field(sa_column=Column(JSON))  # list of {round, reasoning, items, decision, rules_failed}
+    outcome: str  # "held" | "breached" | "agent_gave_up" | "max_rounds_reached"
+    created_at: datetime = Field(default_factory=_now)
+
+
 class SigningKeyRow(SQLModel, table=True):
     """
     The shop's Ed25519 keypair for signing receipts. Generated once,

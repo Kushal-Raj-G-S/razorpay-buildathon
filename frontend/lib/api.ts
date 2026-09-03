@@ -206,3 +206,36 @@ export function reviewEscalation(escalationId: number, approve: boolean, note?: 
     true
   );
 }
+
+// ---------- Red team: an autonomous AI trying to break your own rules ----------
+
+export type RedTeamRound = {
+  round: number;
+  reasoning: string;
+  items: CartItemInput[];
+  resolved_items?: CartItemInput[];
+  decision: "allow" | "block" | "escalate" | "gave_up";
+  rules_failed: string[];
+};
+
+export type RedTeamRun = {
+  id?: number;
+  run_id?: number;
+  merchant_id?: string;
+  goal: string;
+  outcome: "held" | "breached" | "agent_gave_up" | "max_rounds_reached";
+  rounds: RedTeamRound[];
+  created_at?: string;
+};
+
+export function runRedTeam(merchantId: string, goal: string, maxRounds: number = 5) {
+  return request<RedTeamRun>(
+    `/red-team/run`,
+    { method: "POST", body: JSON.stringify({ merchant_id: merchantId, goal, max_rounds: maxRounds }) },
+    true
+  );
+}
+
+export function listRedTeamRuns(merchantId: string) {
+  return request<RedTeamRun[]>(`/red-team/runs?merchant_id=${merchantId}`, undefined, true);
+}

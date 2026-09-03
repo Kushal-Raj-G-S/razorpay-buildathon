@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select
 from app.db.models import (
     PolicyRow, AgentRow, ReceiptRow, EscalationRow, ProductRow, SigningKeyRow,
-    MerchantRow, IdempotencyRow,
+    MerchantRow, IdempotencyRow, RedTeamRunRow,
 )
 from app.models.policy import Policy
 from app.models.receipt import Receipt, RuleResult, Decision
@@ -248,6 +248,19 @@ def save_catalog(session: Session, catalog: Catalog) -> None:
             variants=[v.model_dump() for v in product.variants],
         ))
     session.commit()
+
+
+def save_red_team_run(session: Session, merchant_id: str, goal: str, rounds: list[dict], outcome: str) -> int:
+    row = RedTeamRunRow(merchant_id=merchant_id, goal=goal, rounds=rounds, outcome=outcome)
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row.id
+
+
+def list_red_team_runs(session: Session, merchant_id: str) -> list[RedTeamRunRow]:
+    stmt = select(RedTeamRunRow).where(RedTeamRunRow.merchant_id == merchant_id).order_by(RedTeamRunRow.id.desc())
+    return session.exec(stmt).all()
 
 
 def get_catalog(session: Session, merchant_id: str) -> Catalog | None:

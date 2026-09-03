@@ -17,6 +17,8 @@ Endpoints, in plain words:
   GET  /escalations               -- orders waiting for a human to approve     [merchant-only]
   POST /escalations/{id}/review   -- a human actually approves or rejects one  [merchant-only]
   POST /agents/{agent_id}/revoke  -- shop owner kills an agent's access        [merchant-only]
+  POST /red-team/run              -- an autonomous AI tries to break your rules [merchant-only]
+  GET  /red-team/runs             -- history of past red-team runs             [merchant-only]
 
 "[merchant-only]" means the caller must send `Authorization: Bearer <api_key>`
 proving they own that merchant_id -- see app/auth.py. Before this, ANY
@@ -70,6 +72,33 @@ app.add_middleware(
 
 def _auth(merchant_id: str, session: Session, authorization: str | None) -> None:
     require_merchant_auth(merchant_id, session, authorization)
+
+
+def _resolve_items_against_catalog(session: Session, merchant_id: str, items: list[CartItem]) -> list[CartItem]:
+    """
+    Never trust what an agent claims an item is. Look up every incoming
+    item against the merchant's own catalog and overwrite title/price/
+    category with that authoritative data; anything that doesn't match a
+    real listing gets marked unlisted (see engine/evaluate.py's
+    check_items_are_listed). Shared by /checkout-sessions and the
+    adversarial-agent demo endpoint so both go through the identical
+    real defense, not a look-alike copy of it.
+    """
+    catalog = repo.get_catalog(session, merchant_id)
+    if not catalog:
+        return items
+
+    resolved = []
+    for item in items:
+        match = catalog.find_variant(item.id)
+        if match:
+            resolved.append(CartItem(
+                id=item.id, title=match.title, price=match.price,
+                category=match.category, quantity=item.quantity, listed=True,
+            ))
+        else:
+            resolved.append(item.model_copy(update={"listed": False}))
+    return resolved
 
 
 @app.get("/.well-known/ucp")
@@ -271,14 +300,21 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
     if not policy:
         raise HTTPException(404, "merchant has not set a policy -- refusing to guess")
 
-    # Was this cart really signed by the agent it claims to be?
+    # Was this cart really signed by the agent it claims to be? Verify
+    # against exactly what the agent submitted, BEFORE any catalog
+    # resolution below rewrites it -- the agent must have signed what it
+    # actually sent, not a version we've since corrected.
     identity_verified = False
     public_key_hex = repo.get_agent_public_key(session, req.agent_id)
     if public_key_hex and req.signature_hex:
         identity_verified = verify_agent_signature(req.items, req.signature_hex, public_key_hex)
 
+    # Never trust what the agent claims an item is -- resolve against
+    # the merchant's own catalog (see helper docstring above).
+    resolved_items = _resolve_items_against_catalog(session, req.merchant_id, req.items)
+
     cart = Cart(id=f"cart_{req.merchant_id}_{req.agent_id}_{time.time_ns()}",
-                merchant_id=req.merchant_id, items=req.items, payment_mode=req.payment_mode)
+                merchant_id=req.merchant_id, items=resolved_items, payment_mode=req.payment_mode)
 
     recent_order_count = repo.count_recent_orders(
         session, req.merchant_id, req.agent_id, policy.velocity_window_minutes,
@@ -394,3 +430,115 @@ def unrevoke_agent(agent_id: str, merchant_id: str, session: Session = Depends(g
     _auth(merchant_id, session, authorization)
     repo.set_agent_revoked(session, agent_id, False)
     return {"status": "unrevoked", "agent_id": agent_id}
+
+
+# ---------- Red team: an autonomous AI tries to break your own rules ----------
+
+class RedTeamRequest(BaseModel):
+    merchant_id: str
+    goal: str = "Get a gift card purchased for a customer, no matter what it takes."
+    max_rounds: int = 5
+
+
+def _catalog_summary_for_prompt(catalog) -> str:
+    if not catalog or not catalog.products:
+        return "(no catalog listed for this merchant)"
+    lines = []
+    for p in catalog.products:
+        for v in p.variants:
+            lines.append(f"- id={v.id}, title=\"{v.title}\", price=Rs{v.price/100:.0f}, category={v.category}")
+    return "\n".join(lines)
+
+
+@app.post("/red-team/run")
+async def run_red_team(req: RedTeamRequest, session: Session = Depends(get_session),
+                        authorization: str | None = Header(None)):
+    """
+    A real autonomous AI agent (not a scripted sequence) repeatedly
+    tries to get something past this merchant's actual rules, adapting
+    its strategy after every rejection -- exactly the adversarial
+    pressure the whole engine is built to survive. It sees only the
+    catalog and the outcome of its own attempts, never the policy
+    itself, same as a real attacker would. The full transcript is
+    persisted, not just returned once and forgotten.
+    """
+    _auth(req.merchant_id, session, authorization)
+
+    if not ai_client.is_configured():
+        raise HTTPException(503, "AI not configured -- set NVIDIA_API_KEY in backend/.env")
+
+    policy = repo.get_policy(session, req.merchant_id)
+    if not policy:
+        raise HTTPException(404, "merchant has not set a policy -- refusing to guess")
+
+    catalog = repo.get_catalog(session, req.merchant_id)
+    catalog_summary = _catalog_summary_for_prompt(catalog)
+
+    history: list[dict] = []
+    rounds: list[dict] = []
+    outcome = "max_rounds_reached"
+
+    for round_number in range(1, req.max_rounds + 1):
+        attempt = await ai_client.adversarial_agent_attempt(req.goal, catalog_summary, history)
+
+        if attempt.get("give_up"):
+            outcome = "agent_gave_up"
+            rounds.append({
+                "round": round_number, "reasoning": attempt.get("reasoning", ""),
+                "items": [], "decision": "gave_up", "rules_failed": [],
+            })
+            break
+
+        raw_items = [
+            CartItem(
+                id=i["id"], title=i["title"],
+                price=round(float(i["price_rupees"]) * 100),
+                category=i.get("category"), quantity=int(i.get("quantity", 1)),
+            )
+            for i in attempt.get("items", [])
+        ]
+
+        resolved_items = _resolve_items_against_catalog(session, req.merchant_id, raw_items)
+        cart = Cart(id=f"redteam_{req.merchant_id}_{time.time_ns()}",
+                    merchant_id=req.merchant_id, items=resolved_items)
+
+        receipt = evaluate(
+            cart, policy, agent_id="red-team-agent",
+            identity_verified=True,  # isolate the catalog/category defense, not identity
+            recent_order_count=round_number - 1,
+        )
+
+        rules_failed = [r.rule_name for r in receipt.rules_checked if not r.passed]
+        rounds.append({
+            "round": round_number,
+            "reasoning": attempt.get("reasoning", ""),
+            "items": [i.model_dump() for i in raw_items],  # what the agent CLAIMED
+            "resolved_items": [i.model_dump() for i in resolved_items],  # what it actually was
+            "decision": receipt.decision.value,
+            "rules_failed": rules_failed,
+        })
+        history.append({
+            "items": [i.model_dump() for i in raw_items],
+            "decision": receipt.decision.value,
+            "reason": "; ".join(r.detail for r in receipt.rules_checked if not r.passed) or None,
+        })
+
+        if receipt.decision.value == "allow":
+            outcome = "breached"
+            break
+    else:
+        # Every round ran to completion without a single "allow" and
+        # without the agent giving up -- the merchant's rules held
+        # against every attempt it made.
+        outcome = "held"
+
+    run_id = repo.save_red_team_run(session, req.merchant_id, req.goal, rounds, outcome)
+
+    return {"run_id": run_id, "goal": req.goal, "outcome": outcome, "rounds": rounds}
+
+
+@app.get("/red-team/runs")
+def list_red_team_runs_endpoint(merchant_id: str, session: Session = Depends(get_session),
+                                 authorization: str | None = Header(None)):
+    _auth(merchant_id, session, authorization)
+    return repo.list_red_team_runs(session, merchant_id)

@@ -25,6 +25,31 @@ def check_max_order_value(cart: Cart, policy: Policy) -> RuleResult:
     return RuleResult(rule_name="max_order_value", passed=True, detail="within limit")
 
 
+def check_items_are_listed(cart: Cart, policy: Policy) -> RuleResult:
+    """
+    Every other check here trusts item.category, item.price, item.title
+    -- fields the AGENT itself sets in the checkout request. Nothing
+    stops an agent from calling a gift card "clothing" and walking
+    straight past deny_categories. This is the check that closes that:
+    main.py's checkout handler resolves every incoming item against the
+    merchant's real catalog BEFORE evaluate() ever runs, overwriting
+    category/price/title with the merchant's own listing and marking
+    item.listed = True. Anything that doesn't match a real listing stays
+    listed = False and gets blocked here, unconditionally -- a merchant
+    never agreed to sell it under any name, so no policy setting can
+    override this.
+    """
+    for item in cart.items:
+        if not item.listed:
+            return RuleResult(
+                rule_name="items_are_listed",
+                passed=False,
+                detail=f"item '{item.title}' (id: {item.id}) is not in this merchant's catalog "
+                       f"-- cannot verify what it actually is, so it cannot be sold",
+            )
+    return RuleResult(rule_name="items_are_listed", passed=True, detail="every item matches the merchant's own catalog")
+
+
 def check_deny_categories(cart: Cart, policy: Policy) -> RuleResult:
     for item in cart.items:
         if item.category in policy.deny_categories:
@@ -110,6 +135,7 @@ def check_velocity(policy: Policy, recent_order_count: int) -> RuleResult:
 # Every rule function goes in this list. Adding a new rule later = write
 # one function above, add its name here. Nothing else changes.
 ALL_CHECKS = [
+    check_items_are_listed,
     check_max_order_value,
     check_deny_categories,
     check_max_units_per_sku,

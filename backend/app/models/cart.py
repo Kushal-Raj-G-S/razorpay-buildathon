@@ -16,6 +16,17 @@ class CartItem(BaseModel):
     category: Optional[str] = None   # "clothing", "gift_card", etc — this is what deny_categories checks
     quantity: int = 1
 
+    # True once this item has been checked against the merchant's own
+    # catalog (see main.py's checkout handler, which resolves every
+    # incoming item against repo.get_catalog before anything is
+    # evaluated). Until that happens, category/price/title are just
+    # whatever the AGENT claims -- nothing stops it from calling a gift
+    # card "clothing". Once resolved against a real catalog listing,
+    # those fields get OVERWRITTEN with the merchant's own authoritative
+    # data, so an agent cannot lie its way past deny_categories by
+    # mislabeling what it's actually buying.
+    listed: bool = True
+
 
 class Cart(BaseModel):
     id: str

@@ -8,6 +8,7 @@ const NAV_LINKS = [
   { href: "/catalog", label: "Catalog" },
   { href: "/policy", label: "Rules" },
   { href: "/demo", label: "Try it" },
+  { href: "/red-team", label: "Red team" },
   { href: "/escalations", label: "Review queue" },
   { href: "/receipts", label: "Receipts" },
 ];
