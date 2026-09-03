@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { catalogFromText, MERCHANT_ID, type CatalogProduct } from "@/lib/api";
+import { staggerParent, staggerChild } from "@/components/Reveal";
 
 const EXAMPLE = `Blue Tshirt L 499/-
 Red shirt medium size rs450
@@ -55,16 +57,20 @@ export default function CatalogPage() {
       </div>
 
       {products && (
-        <div>
-          <p className="label-eyebrow mb-4">
+        <motion.div initial="hidden" animate="visible" variants={staggerParent}>
+          <motion.p variants={staggerChild} className="label-eyebrow mb-4">
             {products.length} product{products.length !== 1 ? "s" : ""} found
-          </p>
+          </motion.p>
           <div className="card divide-y divide-border overflow-hidden">
             {products.map((p) => {
               const v = p.variants[0];
               const isRisky = v.category === "gift_card" || v.category === "clearance";
               return (
-                <div key={p.id} className="flex items-center justify-between gap-6 px-6 py-4">
+                <motion.div
+                  key={p.id}
+                  variants={staggerChild}
+                  className="flex items-center justify-between gap-6 px-6 py-4"
+                >
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{p.title}</p>
                     <div className="flex items-center gap-2 mt-1">
@@ -81,11 +87,11 @@ export default function CatalogPage() {
                   <span className="mono-num text-sm font-medium shrink-0">
                     ₹{(v.price / 100).toFixed(2)}
                   </span>
-                </div>
+                </motion.div>
               );
             })}
           </div>
-        </div>
+        </motion.div>
       )}
     </div>
   );

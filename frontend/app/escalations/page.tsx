@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { listEscalations, reviewEscalation, MERCHANT_ID, type Escalation } from "@/lib/api";
 
 export default function EscalationsPage() {
@@ -31,7 +32,10 @@ export default function EscalationsPage() {
           ? `Approved — real Razorpay payment link created: ${result.payment?.short_url ?? "n/a"}`
           : "Rejected — no payment was created."
       );
-      refresh();
+      // Remove it from the list immediately so it visibly leaves rather
+      // than waiting for a full refetch -- the exit animation below is
+      // what actually plays this.
+      setPending((prev) => prev.filter((e) => e.id !== id));
     } catch (e) {
       setMessage(`Failed: ${(e as Error).message}`);
     }
@@ -65,44 +69,54 @@ export default function EscalationsPage() {
       )}
 
       <div className="space-y-4">
-        {pending.map((e) => (
-          <div key={e.id} className="card overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-warning-soft/40">
-              <div className="flex items-center gap-3">
-                <span className="badge badge-escalate">Order #{e.id}</span>
-                <span className="text-sm text-ink-muted">agent: {e.agent_id}</span>
-              </div>
-              <span className="mono-num text-sm font-medium">₹{(e.cart_total / 100).toFixed(2)}</span>
-            </div>
-
-            <div className="px-6 py-4 space-y-1.5">
-              {e.cart_items.map((item, i) => (
-                <div key={i} className="flex items-center justify-between text-sm">
-                  <span>
-                    {item.title} <span className="text-ink-faint">× {item.quantity}</span>
-                  </span>
-                  <span className="mono-num text-ink-muted">₹{(item.price / 100).toFixed(2)}</span>
+        <AnimatePresence initial={false}>
+          {pending.map((e) => (
+            <motion.div
+              key={e.id}
+              layout
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, x: 40, scale: 0.97, transition: { duration: 0.25 } }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="card overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-warning-soft/40">
+                <div className="flex items-center gap-3">
+                  <span className="badge badge-escalate">Order #{e.id}</span>
+                  <span className="text-sm text-ink-muted">agent: {e.agent_id}</span>
                 </div>
-              ))}
-            </div>
+                <span className="mono-num text-sm font-medium">₹{(e.cart_total / 100).toFixed(2)}</span>
+              </div>
 
-            <div className="px-6 pb-5 flex flex-wrap items-center gap-3">
-              <input
-                type="text"
-                placeholder="optional note"
-                className="field-input flex-1 min-w-[160px]"
-                value={note[e.id] || ""}
-                onChange={(ev) => setNote({ ...note, [e.id]: ev.target.value })}
-              />
-              <button onClick={() => decide(e.id, true)} className="btn btn-primary">
-                Approve
-              </button>
-              <button onClick={() => decide(e.id, false)} className="btn btn-danger">
-                Reject
-              </button>
-            </div>
-          </div>
-        ))}
+              <div className="px-6 py-4 space-y-1.5">
+                {e.cart_items.map((item, i) => (
+                  <div key={i} className="flex items-center justify-between text-sm">
+                    <span>
+                      {item.title} <span className="text-ink-faint">× {item.quantity}</span>
+                    </span>
+                    <span className="mono-num text-ink-muted">₹{(item.price / 100).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="px-6 pb-5 flex flex-wrap items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="optional note"
+                  className="field-input flex-1 min-w-[160px]"
+                  value={note[e.id] || ""}
+                  onChange={(ev) => setNote({ ...note, [e.id]: ev.target.value })}
+                />
+                <button onClick={() => decide(e.id, true)} className="btn btn-primary">
+                  Approve
+                </button>
+                <button onClick={() => decide(e.id, false)} className="btn btn-danger">
+                  Reject
+                </button>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { getPolicy, savePolicy, draftPolicyFromText, MERCHANT_ID, type Policy } from "@/lib/api";
 
 const DEFAULT_POLICY: Policy = {
@@ -124,7 +125,12 @@ export default function PolicyPage() {
         happens with money. Change anything, save, and it applies immediately.
       </p>
 
-      <div className="card p-7 mb-6 bg-paper-2/60">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="card p-7 mb-6 bg-paper-2/60"
+      >
         <p className="field-label mb-1">Describe your rules in plain English instead</p>
         <p className="field-hint mb-3 mt-0">
           AI turns this into the fields below — it only fills the form, it never saves by itself.
@@ -146,9 +152,14 @@ export default function PolicyPage() {
           </button>
           {draftError && <p className="text-sm text-danger">{draftError}</p>}
         </div>
-      </div>
+      </motion.div>
 
-      <div className="card p-7 sm:p-9">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
+        className="card p-7 sm:p-9"
+      >
         <Section eyebrow="Money" title="Spending limits">
           <div>
             <label className="field-label">Maximum order value (₹)</label>
@@ -272,12 +283,24 @@ export default function PolicyPage() {
         </Section>
 
         <div className="pt-8 flex items-center gap-4">
-          <button onClick={handleSave} className="btn btn-primary">
+          <motion.button whileTap={{ scale: 0.97 }} onClick={handleSave} className="btn btn-primary">
             Save rules
-          </button>
-          {status && <p className="text-sm text-ink-muted">{status}</p>}
+          </motion.button>
+          <AnimatePresence mode="wait">
+            {status && (
+              <motion.p
+                key={status}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0 }}
+                className="text-sm text-ink-muted"
+              >
+                {status}
+              </motion.p>
+            )}
+          </AnimatePresence>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

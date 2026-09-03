@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
 import { listReceipts, MERCHANT_ID, type Receipt } from "@/lib/api";
+import { staggerParent, staggerChild } from "@/components/Reveal";
 
 const DECISION_BADGE: Record<Receipt["decision"], string> = {
   allow: "badge-allow",
@@ -54,9 +56,9 @@ export default function ReceiptsPage() {
         </div>
       )}
 
-      <div className="space-y-3">
+      <motion.div initial="hidden" animate="visible" variants={staggerParent} className="space-y-3">
         {[...receipts].reverse().map((r) => (
-          <details key={r.cart_id} className="card group overflow-hidden">
+          <motion.details key={r.cart_id} variants={staggerChild} className="card group overflow-hidden">
             <summary className="cursor-pointer list-none px-6 py-4 flex items-center justify-between gap-4 hover:bg-paper-2/50 transition-colors">
               <div className="flex items-center gap-3 min-w-0">
                 <span className={`badge ${DECISION_BADGE[r.decision]}`}>{r.decision}</span>
@@ -86,9 +88,9 @@ export default function ReceiptsPage() {
                 <p className="mono-num text-xs text-ink-faint break-all">{r.signature}</p>
               </div>
             </div>
-          </details>
+          </motion.details>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }

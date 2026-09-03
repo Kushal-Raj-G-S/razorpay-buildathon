@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   tryCheckout,
   revokeAgent,
@@ -59,16 +60,34 @@ const DECISION_BADGE: Record<Receipt["decision"], string> = {
 
 function ReceiptCard({ receipt }: { receipt: Receipt }) {
   return (
-    <div className="card p-7 mt-8">
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10, transition: { duration: 0.15 } }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      className="card p-7 mt-8"
+    >
       <div className="flex items-center justify-between mb-5">
-        <span className={`badge ${DECISION_BADGE[receipt.decision]} text-[0.78rem] px-3 py-1.5`}>
+        <motion.span
+          key={receipt.decision + receipt.timestamp}
+          initial={{ opacity: 0, scale: 1.7, rotate: -10 }}
+          animate={{ opacity: 1, scale: 1, rotate: -4 }}
+          transition={{ type: "spring", stiffness: 340, damping: 16, delay: 0.1 }}
+          className={`badge ${DECISION_BADGE[receipt.decision]} text-[0.78rem] px-3 py-1.5`}
+        >
           {receipt.decision}
-        </span>
+        </motion.span>
         <span className="mono-num text-sm text-ink-muted">₹{(receipt.cart_total / 100).toFixed(2)}</span>
       </div>
       <div className="space-y-2.5 mb-5">
-        {receipt.rules_checked.map((r) => (
-          <div key={r.rule_name} className="flex items-start gap-2.5 text-sm">
+        {receipt.rules_checked.map((r, i) => (
+          <motion.div
+            key={r.rule_name}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.25 + i * 0.06, duration: 0.35 }}
+            className="flex items-start gap-2.5 text-sm"
+          >
             <span
               className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${r.passed ? "bg-accent" : "bg-danger"}`}
             />
@@ -76,14 +95,14 @@ function ReceiptCard({ receipt }: { receipt: Receipt }) {
               <span className="font-medium">{r.rule_name}</span>
               <span className="text-ink-muted"> — {r.detail}</span>
             </span>
-          </div>
+          </motion.div>
         ))}
       </div>
       <div className="pt-4 border-t border-border">
         <p className="label-eyebrow mb-1">Signature</p>
         <p className="mono-num text-xs text-ink-faint break-all">{receipt.signature}</p>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -136,18 +155,22 @@ export default function DemoPage() {
       </p>
 
       <div className="grid sm:grid-cols-2 gap-3">
-        {SCENARIOS.map((s) => (
-          <button
+        {SCENARIOS.map((s, i) => (
+          <motion.button
             key={s.label}
             onClick={() => send(s)}
             disabled={loading !== null}
+            whileTap={{ scale: 0.98 }}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05, duration: 0.35 }}
             className="card p-5 text-left hover:border-accent transition-colors disabled:opacity-50"
           >
             <p className="text-sm font-medium mb-0.5">
               {loading === s.label ? "Sending…" : s.label}
             </p>
             <p className="text-xs text-ink-muted">{s.sub}</p>
-          </button>
+          </motion.button>
         ))}
       </div>
 
@@ -165,7 +188,9 @@ export default function DemoPage() {
 
       {error && <p className="text-sm text-danger mt-6">{error}</p>}
       {extra && <p className="text-sm text-ink-muted mt-6">{extra}</p>}
-      {receipt && <ReceiptCard receipt={receipt} />}
+      <AnimatePresence mode="wait">
+        {receipt && <ReceiptCard key={receipt.cart_id + receipt.timestamp} receipt={receipt} />}
+      </AnimatePresence>
     </div>
   );
 }
