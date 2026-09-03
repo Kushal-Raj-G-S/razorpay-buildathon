@@ -4,17 +4,27 @@ What a shopping cart looks like when an AI sends it to us.
 Kept close to the UCP standard's field names (see research/06-protocols.md)
 so this looks like a real industry cart, not something we invented.
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class CartItem(BaseModel):
     id: str                      # product id, e.g. "shirt-blue-L"
     title: str                   # "Blue Cotton Shirt, Large"
-    price: int                   # in paise (450 rupees = 45000). Whole numbers only, no rounding bugs.
+    price: int = Field(ge=0)     # in paise (450 rupees = 45000). Whole numbers only, no rounding bugs.
     currency: str = "INR"
     category: Optional[str] = None   # "clothing", "gift_card", etc — this is what deny_categories checks
-    quantity: int = 1
+
+    # A negative quantity is not a real cart, it's an exploit: it makes
+    # cart.total negative, and every value-based check here works by
+    # asking "is this greater than the limit" -- which a negative number
+    # never is. Proved this concretely before adding the constraint: a
+    # cart with quantity=-9999 on an honestly-priced, honestly-listed
+    # item sailed through as ALLOW with a total of -Rs 44,99,550,
+    # because every single rule trivially passed against a negative
+    # number. Bounding this at the schema means the request is rejected
+    # with a 422 before it ever reaches the evaluator, not after.
+    quantity: int = Field(default=1, gt=0)
 
     # True once this item has been checked against the merchant's own
     # catalog (see main.py's checkout handler, which resolves every

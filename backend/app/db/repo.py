@@ -214,10 +214,26 @@ def list_escalations(session: Session, merchant_id: str | None = None, status: s
     return session.exec(stmt).all()
 
 
+class AlreadyReviewedError(Exception):
+    """Raised when a caller tries to review an escalation a second time.
+
+    Without this guard, double-clicking Approve -- or a plain network
+    retry, the same failure mode Idempotency-Key exists to prevent on
+    checkout -- would create a SECOND real Razorpay payment link for an
+    order that was already approved once. Caught this by re-reading the
+    checkout endpoint's own idempotency handling and asking whether the
+    same class of bug existed anywhere else money moves. It did, here.
+    """
+
+
 def review_escalation(session: Session, escalation_id: int, approve: bool, note: str | None) -> EscalationRow | None:
     row = session.get(EscalationRow, escalation_id)
     if not row:
         return None
+    if row.status != "pending":
+        raise AlreadyReviewedError(
+            f"escalation {escalation_id} was already {row.status} at {row.reviewed_at}"
+        )
     row.status = "approved" if approve else "rejected"
     row.reviewer_note = note
     row.reviewed_at = datetime.now(timezone.utc)

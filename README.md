@@ -1,95 +1,144 @@
-# Razorpay AI Buildathon 2026 — Track 01
+# Warrant
 
-**Builder:** Kushal Raj G S (1BY23AI072, BMSIT&M) · B.E. AI&ML, CGPA 8.98, 2023–2027
-**Track chosen:** 01 — AI Growth & Agentic Commerce
-**Applications close:** 5 September 2026
-**Apply form:** https://forms.gle/d9r2gvxp8cmoZhon9
-**Program page:** https://razorpay.com/buildathon/
+**The merchant's side of agentic commerce.**
+
+Every agentic-commerce protocol — AP2, ACP, UCP, even UPI Reserve Pay — lets the *buyer*
+put a leash on an AI shopping agent. None of them let the *merchant* declare what it will
+accept, or prove afterward what it decided. Nine protocols were read at spec level
+(see [`research/06-protocols.md`](research/06-protocols.md)) and every single one refuses
+that question. Warrant is the missing half.
+
+Built for [Razorpay's AI Buildathon 2026](https://razorpay.com/buildathon/), Track 01 —
+see [`research/`](research/) for the full evidence base and [`DECISION.md`](DECISION.md)
+for how the build was scoped.
 
 ---
 
-## The offer
+## What it actually does
 
-| Item | Detail |
-|---|---|
-| Stipend | ₹75,000 / month |
-| Duration | 6 or 12 months (builder's choice) |
-| Location | In-person, Bangalore, from September |
-| Process | Shortlisted → straight to panel. No aptitude test, no GD. |
-| Screening | Resume taken but explicitly **not** screened on |
+1. **A merchant writes rules** — spending limits, banned categories, Cash-on-Delivery
+   policy, how many orders one agent may place per hour — either by filling in fields, or
+   by typing plain English and letting AI draft the fields for them (they still have to
+   click Save; nothing applies itself).
+2. **Every AI-agent checkout gets checked against those rules, deterministically.** No LLM
+   sits in the decision path — see *"Why no AI in the decision path"* below.
+3. **Every item in the cart is verified against the merchant's own catalog**, not trusted
+   from the agent's claim. An agent cannot mislabel a gift card as "clothing" — the
+   category is overwritten with the merchant's real listing before any rule runs.
+4. **Every decision is signed** (Ed25519) and persisted, allow or block or escalate, with
+   the exact rule that fired.
+5. **A merchant can send a real autonomous AI to attack their own rules** — `/red-team` —
+   and get back a full, unscripted transcript of what it tried and why it failed.
+6. **The whole decision engine is exposed as an MCP server**, the same protocol Razorpay's
+   own Agent Studio (built on the Claude Agent SDK) uses to call tools — see
+   [`backend/app/mcp_server.py`](backend/app/mcp_server.py).
 
-## Track 01 brief (verbatim from site)
+## Why no AI in the decision path
 
-> **Grow the merchant's revenue, and make them sellable to AI buyers**
->
-> Build an agent that grows revenue for a merchant on Razorpay test-mode APIs, or that
-> makes a merchant transactable by an AI buyer end to end.
->
-> **WHY NOW** — NPCI's UAP and the global protocol race (ACP, AP2, x402) make
-> agent-to-agent commerce the open problem of the year, and Razorpay's in-app pilots
-> are already live.
->
-> **EXAMPLE DIRECTIONS** — Conversational in-app checkout · Agent-readable catalog ·
-> Upsell & cross-sell agent · Campaign orchestrator
->
-> **THE BAR** — Every money action explainable, bounded and gated. Show the audit
-> trail and one failure handled gracefully.
+NIST measured agent-hijacking success rising from **11% to 81%** once an attack is
+tailored to the specific target agent, not drawn from a generic baseline
+([research/04](research/04-trust-fraud-liability.md)). A bound enforced by a prompt is not
+a bound. So: **AI drafts the rules and normalizes messy catalog data — deterministic code
+enforces them.** That split is checkable in the repo layout itself: nothing in
+`backend/app/engine/` imports anything that can make a network or inference call.
 
-### Two doors, one pipeline
-
-- **Door A** — grow revenue for a merchant using AI on Razorpay test-mode APIs
-- **Door B** — make a merchant transactable by an AI buyer end-to-end
-
-**Decision:** build them as *one* pipeline where Door B feeds Door A (agent-readable +
-trust-gated catalog → growth/checkout agent that can only act through that gate), rather
-than two disconnected submissions. Single track submission only — the form asks for
-"Your track" (singular) and one project.
-
-## Judging criteria (verbatim)
-
-| Criterion | What they said |
-|---|---|
-| Problem taste | did you pick something that actually matters |
-| Build quality | does it run, is it structured, would you trust it |
-| AI judgment | the right tool in the right place, **and where you chose not to use one** |
-| Failure recovery | what broke, and what you did about it |
-
-## Application form — 12 required fields
-
-**About you (6):** full name · college · graduation year · in-person from September (Y/N) ·
-6 or 12 months · resume file
-
-**About the build (6):** track · project name · what it solves · **public** GitHub repo URL ·
-5-min pitch video (unlisted OK) · **what broke, and how you got out**
-
-> Site note: *"The last one is the one we read first."* — the failure-recovery answer is the
-> highest-leverage field in the whole form.
-
-## Why this track fits (self-assessment)
-
-The track's bar — *explainable, bounded, gated, audit trail* — is structurally the same
-problem already solved in prior work:
-
-- **Varinth** — Proof Objects, evidence grounding, Critic–Verifier–Judge swarm,
-  deterministic verdict synthesis, bounded verification scopes → maps directly onto
-  "every money action explainable and auditable"
-- **Roast** — self-evaluating trust layer (RAGAS faithfulness/relevancy), closed-loop
-  fix-verification, 4-signal priority engine → maps onto measured, honest metrics
-- **Baxel** — hierarchical multi-agent architecture, semantic routing, structured
-  generation under Pydantic constraints → maps onto bounded agent orchestration
-
-Domain gap to close: payments/commerce domain knowledge. This is API-integration and
-protocol-reading work, **not** finance expertise — which is why Track 01 was chosen over
-Tracks 02/03/04 (fraud-ML, revenue-ops and reconciliation respectively, all of which
-assume finance-domain intuition).
-
-## Repo layout
+## Architecture
 
 ```
-razorpay-buildathon/
-├── README.md          ← this file
-└── research/          ← evidence base, every claim sourced
-    ├── 00-track-brief.md
-    ├── 01-landscape-initial.md
-    └── ...            ← deep-dive briefs land here
+frontend/          Next.js 16 + Tailwind v4, warm-paper/ledger-green design system
+backend/
+  app/
+    engine/        THE BOUNCER — pure functions, no AI, no I/O. evaluate.py runs every rule.
+    ai_client.py   The two places AI is deliberately used: catalog normalization, policy
+                   drafting, and the red-team adversary. Nowhere else.
+    db/            SQLModel tables + repo functions. SQLite by default, Postgres via
+                   DATABASE_URL (verified live against Neon — see git log).
+    mcp_server.py  The same engine, exposed as MCP tools for any Claude Agent SDK host.
+    main.py        FastAPI routes. Every merchant-facing write requires
+                    Authorization: Bearer <api_key> (see app/auth.py) — every agent-facing
+                    route (checkout, catalog search) stays open, same as a real storefront.
+  tests/           29 tests, real HTTP integration tests via FastAPI's TestClient, not
+                   just unit tests of internals. Run: pytest -q
+research/           Every claim behind every design decision, sourced.
 ```
+
+## Running it locally
+
+**Backend:**
+```bash
+cd backend
+python -m venv venv && venv\Scripts\pip install -r requirements.txt
+copy .env.example .env   # fill in RAZORPAY_*, NVIDIA_API_KEY — see .env.example
+venv\Scripts\python -m uvicorn app.main:app --port 8000
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+copy .env.local.example .env.local   # NEXT_PUBLIC_MERCHANT_API_KEY comes from
+                                      # POST /merchants/register (see below)
+npm run dev
+```
+
+**First-time setup** (no signup UI exists yet — see Known Gaps):
+```bash
+curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: application/json" -d "{\"merchant_id\": \"shop_123\"}"
+# copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
+```
+
+**Tests:** `cd backend && pytest -q` — 29 passing, no network dependency (Razorpay calls
+are stubbed in the test suite; the real integration is proven separately, live, in git
+history).
+
+---
+
+## Known gaps — read this before assuming anything below isn't here for a reason
+
+Built fast, tested hard, but not everything is closed. Listed here explicitly rather than
+left for someone to discover, because a security/trust product that hides its own gaps is
+not one anyone should trust.
+
+**Not deployed anywhere permanent.** This runs locally — there is no live URL. Anyone
+evaluating it needs to run both servers themselves, per the instructions above.
+
+**No merchant self-service signup UI.** `POST /merchants/register` works and is tested,
+but there's no page for it — account creation happens via curl. A real product needs this
+before a second merchant could ever use it without a developer's help.
+
+**No API key rotation endpoint.** If a merchant's key leaks, there is no way to reissue one
+without direct database access.
+
+**CORS is wide open** (`allow_origins=["*"]`) — fine for local development, not for
+production.
+
+**No rate limiting.** The AI endpoints (`/catalog/from-text`, `/policy/draft-from-text`,
+`/red-team/run`) can be called as fast as a client wants, with real NVIDIA API cost behind
+every call.
+
+**For a merchant with no catalog uploaded, item price is 100% agent-declared and
+unverified.** The catalog-truth defense (see `_resolve_items_against_catalog` in
+`main.py`) only activates once a merchant has uploaded one — before that, nothing stops an
+agent from declaring a false price for a real transaction. This is disclosed, not hidden:
+uploading a catalog is what turns this defense on.
+
+**No structured logging or error monitoring.** Default `print()` and uvicorn logs only —
+nothing like Sentry wired in.
+
+**`/red-team` doesn't show run history in the UI.** `GET /red-team/runs` exists and every
+run is persisted, but the frontend page only ever shows the run you just triggered, not
+past ones.
+
+**The AI endpoints have no automated regression tests.** They're proven working via
+real, logged runs in git history (including two live model retirements caught and fixed
+mid-session — see commit history), but nothing in `pytest` calls the live NVIDIA API, so a
+third model retirement wouldn't be caught by CI. There is no CI, either.
+
+**Two real money-safety bugs were found and fixed by deliberately auditing for this class
+of mistake, not by chance** — see `backend/tests/test_money_safety.py` and its
+introducing commit: a negative cart quantity produced a negative total that trivially
+passed every value-based rule, and double-clicking "Approve" on an escalated order could
+create two separate real Razorpay payment links for one order. Both are now schema- and
+status-guarded, with regression tests. The fact that these existed after multiple rounds
+of testing is itself the honest finding: testing finds *some* bugs, not *all* of them, and
+this repo does not claim otherwise.

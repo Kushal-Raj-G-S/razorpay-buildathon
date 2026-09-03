@@ -402,7 +402,13 @@ async def review_escalation_endpoint(escalation_id: int, req: ReviewRequest,
         raise HTTPException(404, "no such escalation")
     _auth(existing.merchant_id, session, authorization)
 
-    row = repo.review_escalation(session, escalation_id, req.approve, req.note)
+    try:
+        row = repo.review_escalation(session, escalation_id, req.approve, req.note)
+    except repo.AlreadyReviewedError as e:
+        # A double-click or a network retry must never create a second
+        # payment link. Same principle as Idempotency-Key on checkout,
+        # applied to the one other place this endpoint moves money.
+        raise HTTPException(409, str(e))
 
     result = {"escalation": row}
     if req.approve:
