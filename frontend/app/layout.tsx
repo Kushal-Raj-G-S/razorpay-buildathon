@@ -29,11 +29,17 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Link href="/" className="font-semibold tracking-tight">
             Warrant
           </Link>
+          <Link href="/catalog" className="text-sm text-zinc-600 hover:text-zinc-900">
+            Catalog
+          </Link>
           <Link href="/policy" className="text-sm text-zinc-600 hover:text-zinc-900">
             Rules
           </Link>
           <Link href="/demo" className="text-sm text-zinc-600 hover:text-zinc-900">
             Try it
+          </Link>
+          <Link href="/escalations" className="text-sm text-zinc-600 hover:text-zinc-900">
+            Review queue
           </Link>
           <Link href="/receipts" className="text-sm text-zinc-600 hover:text-zinc-900">
             Receipts

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getPolicy, savePolicy, MERCHANT_ID, type Policy } from "@/lib/api";
+import { getPolicy, savePolicy, draftPolicyFromText, MERCHANT_ID, type Policy } from "@/lib/api";
 
 const DEFAULT_POLICY: Policy = {
   merchant_id: MERCHANT_ID,
@@ -17,6 +17,9 @@ export default function PolicyPage() {
   const [categoriesText, setCategoriesText] = useState(DEFAULT_POLICY.deny_categories.join(", "));
   const [status, setStatus] = useState<string>("");
   const [loading, setLoading] = useState(true);
+  const [plainEnglish, setPlainEnglish] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState("");
 
   useEffect(() => {
     getPolicy(MERCHANT_ID)
@@ -47,6 +50,30 @@ export default function PolicyPage() {
     }
   }
 
+  async function handleDraft() {
+    setDrafting(true);
+    setDraftError("");
+    try {
+      const { draft } = await draftPolicyFromText(MERCHANT_ID, plainEnglish);
+      // Fills the form below -- does NOT save. You still have to click
+      // "Save rules" yourself. AI drafts, you approve, code enforces.
+      setPolicy({
+        merchant_id: draft.merchant_id,
+        max_order_value: draft.max_order_value,
+        deny_categories: draft.deny_categories,
+        max_units_per_sku: draft.max_units_per_sku,
+        escalate_above: draft.escalate_above,
+        require_signed_identity: draft.require_signed_identity,
+      });
+      setCategoriesText(draft.deny_categories.join(", "));
+      setStatus("Draft filled in below. Review it, then click Save rules to actually apply it.");
+    } catch (e) {
+      setDraftError((e as Error).message);
+    } finally {
+      setDrafting(false);
+    }
+  }
+
   if (loading) return <div className="max-w-2xl mx-auto px-6 py-16">Loading…</div>;
 
   return (
@@ -56,6 +83,31 @@ export default function PolicyPage() {
         Every order an AI agent tries to place gets checked against these rules before anything
         happens with money. Change anything, save, and it applies immediately.
       </p>
+
+      <div className="bg-white border border-zinc-200 rounded-lg p-6 mb-6">
+        <label className="block text-sm font-medium mb-1">
+          Or just describe your rules in plain English
+        </label>
+        <p className="text-xs text-zinc-400 mb-2">
+          AI turns this into the form below — it only fills it in, it never saves anything by
+          itself. You still decide by clicking &quot;Save rules&quot;.
+        </p>
+        <textarea
+          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+          rows={3}
+          placeholder="e.g. don't let agents buy gift cards, cap orders at 5000 rupees, anything over 2000 needs my approval first"
+          value={plainEnglish}
+          onChange={(e) => setPlainEnglish(e.target.value)}
+        />
+        <button
+          onClick={handleDraft}
+          disabled={drafting || !plainEnglish.trim()}
+          className="mt-2 rounded bg-zinc-100 border border-zinc-300 px-4 py-1.5 text-sm hover:bg-zinc-200 disabled:opacity-50"
+        >
+          {drafting ? "Drafting…" : "Draft rules from this"}
+        </button>
+        {draftError && <p className="text-sm text-red-600 mt-2">{draftError}</p>}
+      </div>
 
       <div className="space-y-6 bg-white border border-zinc-200 rounded-lg p-6">
         <div>

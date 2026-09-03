@@ -77,3 +77,72 @@ export function revokeAgent(agentId: string) {
 export function unrevokeAgent(agentId: string) {
   return request<{ status: string }>(`/agents/${agentId}/unrevoke`, { method: "POST" });
 }
+
+// ---------- AI-drafted policy (human must approve before it applies) ----------
+
+export type PolicyDraft = {
+  merchant_id: string;
+  max_order_value: number;
+  deny_categories: string[];
+  max_units_per_sku: number;
+  escalate_above: number | null;
+  require_signed_identity: boolean;
+};
+
+export function draftPolicyFromText(merchantId: string, plainEnglish: string) {
+  return request<{ draft: PolicyDraft; note: string }>(`/policy/draft-from-text`, {
+    method: "POST",
+    body: JSON.stringify({ merchant_id: merchantId, plain_english: plainEnglish }),
+  });
+}
+
+// ---------- AI catalog ingestion ----------
+
+export type CatalogVariant = {
+  id: string;
+  title: string;
+  price: number;
+  category: string | null;
+  available: boolean;
+  sku: string | null;
+};
+
+export type CatalogProduct = {
+  id: string;
+  title: string;
+  description: string | null;
+  variants: CatalogVariant[];
+};
+
+export function catalogFromText(merchantId: string, rawText: string) {
+  return request<{ status: string; product_count: number; catalog: { products: CatalogProduct[] } }>(
+    `/catalog/from-text`,
+    { method: "POST", body: JSON.stringify({ merchant_id: merchantId, raw_text: rawText }) }
+  );
+}
+
+// ---------- Escalations: the human review queue ----------
+
+export type Escalation = {
+  id: number;
+  receipt_id: number;
+  merchant_id: string;
+  agent_id: string;
+  cart_items: CartItemInput[];
+  cart_total: number;
+  status: "pending" | "approved" | "rejected";
+  reviewer_note: string | null;
+  created_at: string;
+  reviewed_at: string | null;
+};
+
+export function listEscalations(merchantId: string, status: string = "pending") {
+  return request<Escalation[]>(`/escalations?merchant_id=${merchantId}&status=${status}`);
+}
+
+export function reviewEscalation(escalationId: number, approve: boolean, note?: string) {
+  return request<{ escalation: Escalation; payment?: Record<string, unknown> }>(
+    `/escalations/${escalationId}/review`,
+    { method: "POST", body: JSON.stringify({ approve, note: note || null }) }
+  );
+}
