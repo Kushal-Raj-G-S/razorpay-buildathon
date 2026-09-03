@@ -62,16 +62,63 @@ def check_identity_verified(policy: Policy, identity_verified: bool) -> RuleResu
     return RuleResult(rule_name="identity_verified", passed=True, detail="identity confirmed or not required")
 
 
+def check_cod_allowed(cart: Cart, policy: Policy) -> RuleResult:
+    """
+    No protocol we researched -- AP2, ACP, UCP, UPI Reserve Pay -- gates
+    Cash on Delivery. They only ever authorize prepaid money. But COD is
+    50-70% of real Indian D2C orders (research/03), and it needs ZERO
+    payment authorization to place: an agent can put in dozens of COD
+    orders and nothing anywhere stops it. Unless the merchant explicitly
+    opted in, an agent-initiated COD order is blocked by default.
+    """
+    if cart.payment_mode == "cod" and not policy.allow_cod_for_agents:
+        return RuleResult(
+            rule_name="cod_allowed",
+            passed=False,
+            detail="agent tried to place a Cash on Delivery order, but this merchant "
+                   "requires agent orders to be prepaid (COD needs no payment authorization "
+                   "at all -- see policy.allow_cod_for_agents)",
+        )
+    return RuleResult(rule_name="cod_allowed", passed=True, detail="prepaid order, or COD explicitly allowed")
+
+
+def check_velocity(policy: Policy, recent_order_count: int) -> RuleResult:
+    """
+    UPI Reserve Pay itself caps retries at 3 in 24 hours (research/03) --
+    the regulator already treats ORDER FREQUENCY, not just order size,
+    as the primary threat. Every other check here only ever looks at one
+    cart in isolation; this is the one check with memory of what this
+    agent has already done. `recent_order_count` is computed by the
+    caller (see db/repo.py) before evaluate() runs, so this function
+    itself stays a pure, stateless check like every other rule.
+    """
+    if policy.max_orders_per_agent_per_window is None:
+        return RuleResult(rule_name="velocity", passed=True, detail="no velocity limit set")
+
+    if recent_order_count >= policy.max_orders_per_agent_per_window:
+        return RuleResult(
+            rule_name="velocity",
+            passed=False,
+            detail=f"agent has already placed {recent_order_count} orders in the last "
+                   f"{policy.velocity_window_minutes} minutes, at or above the limit of "
+                   f"{policy.max_orders_per_agent_per_window}",
+        )
+    return RuleResult(rule_name="velocity", passed=True,
+                       detail=f"{recent_order_count} orders in window, within limit")
+
+
 # Every rule function goes in this list. Adding a new rule later = write
 # one function above, add its name here. Nothing else changes.
 ALL_CHECKS = [
     check_max_order_value,
     check_deny_categories,
     check_max_units_per_sku,
+    check_cod_allowed,
 ]
 
 
-def evaluate(cart: Cart, policy: Policy, agent_id: str, identity_verified: bool = True) -> Receipt:
+def evaluate(cart: Cart, policy: Policy, agent_id: str, identity_verified: bool = True,
+             recent_order_count: int = 0) -> Receipt:
     """
     Run every check. If even ONE fails, the whole cart is blocked.
     This matches AP2's own rule: an unknown or failing check always
@@ -79,6 +126,7 @@ def evaluate(cart: Cart, policy: Policy, agent_id: str, identity_verified: bool 
     """
     results = [check(cart, policy) for check in ALL_CHECKS]
     results.append(check_identity_verified(policy, identity_verified))
+    results.append(check_velocity(policy, recent_order_count))
 
     if any(not r.passed for r in results):
         decision = Decision.BLOCK

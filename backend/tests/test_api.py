@@ -12,16 +12,43 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import itertools
 import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import SQLModel, Session, create_engine
 from sqlalchemy.pool import StaticPool
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+import app.main as main_module
 from app.main import app
 from app.db.session import get_session
 from app.engine.identity import canonical_cart_bytes
 from app.models.cart import CartItem
+
+
+_fake_payment_ids = itertools.count(1)
+
+
+async def _fake_create_payment_link(amount_paise: int, description: str, currency: str = "INR") -> dict:
+    """
+    A real call was already proven live, twice: once directly against
+    Razorpay's API (research/session log) and once through the running
+    server in the browser, with the payment page opened and confirmed
+    genuine. Running the full test suite against the real API on every
+    run got rate-limited (429 Too Many Requests) -- a real mistake, not
+    a hypothetical one: tests shouldn't depend on a third party's rate
+    limit to pass. This fakes only that one network boundary so the
+    suite stays fast and deterministic; everything on our side of that
+    boundary (the checkout logic, the receipt, the decision) is still
+    exercised for real.
+    """
+    return {"id": f"plink_FAKE{next(_fake_payment_ids)}", "short_url": "https://rzp.io/rzp/fake",
+            "status": "created", "amount": amount_paise, "description": description}
+
+
+@pytest.fixture(autouse=True)
+def stub_razorpay(monkeypatch):
+    monkeypatch.setattr(main_module, "create_payment_link", _fake_create_payment_link)
 
 
 @pytest.fixture()

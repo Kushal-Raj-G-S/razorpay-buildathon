@@ -25,6 +25,9 @@ class PolicyRow(SQLModel, table=True):
     max_units_per_sku: int = 10
     escalate_above: Optional[int] = None
     require_signed_identity: bool = True
+    allow_cod_for_agents: bool = False
+    max_orders_per_agent_per_window: Optional[int] = None
+    velocity_window_minutes: int = 60
     updated_at: datetime = Field(default_factory=_now)
 
 

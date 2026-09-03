@@ -5,7 +5,7 @@ and Pydantic out. Keeps the API layer and the storage layer separable,
 so swapping SQLite for real Postgres later only touches this file plus
 session.py's DATABASE_URL.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select
 from app.db.models import (
     PolicyRow, AgentRow, ReceiptRow, EscalationRow, ProductRow, SigningKeyRow,
@@ -81,6 +81,9 @@ def get_policy(session: Session, merchant_id: str) -> Policy | None:
         max_units_per_sku=row.max_units_per_sku,
         escalate_above=row.escalate_above,
         require_signed_identity=row.require_signed_identity,
+        allow_cod_for_agents=row.allow_cod_for_agents,
+        max_orders_per_agent_per_window=row.max_orders_per_agent_per_window,
+        velocity_window_minutes=row.velocity_window_minutes,
     )
 
 
@@ -165,6 +168,23 @@ def list_receipts(session: Session, merchant_id: str | None = None) -> list[Rece
         stmt = stmt.where(ReceiptRow.merchant_id == merchant_id)
     stmt = stmt.order_by(ReceiptRow.id)
     return [_row_to_receipt(r) for r in session.exec(stmt).all()]
+
+
+def count_recent_orders(session: Session, merchant_id: str, agent_id: str, window_minutes: int) -> int:
+    """
+    How many times has this agent tried to check out with this merchant
+    in the last `window_minutes`? Feeds the velocity check (see
+    engine/evaluate.py's check_velocity) -- the one rule with memory of
+    what an agent already did, mirroring how UPI Reserve Pay itself caps
+    retries per day rather than only capping amount per order.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_minutes)
+    stmt = select(ReceiptRow).where(
+        ReceiptRow.merchant_id == merchant_id,
+        ReceiptRow.agent_id == agent_id,
+        ReceiptRow.timestamp >= cutoff,
+    )
+    return len(session.exec(stmt).all())
 
 
 # ---------- Escalations (the human-review queue) ----------

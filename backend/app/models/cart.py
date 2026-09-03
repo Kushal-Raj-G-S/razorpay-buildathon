@@ -22,6 +22,16 @@ class Cart(BaseModel):
     items: list[CartItem]
     merchant_id: str
 
+    # "prepaid" | "cod". This field doesn't exist in AP2, ACP, UCP or
+    # UPI Reserve Pay -- every one of them only governs prepaid money
+    # (see research/06-protocols.md). But 50-70% of real Indian D2C
+    # orders are Cash on Delivery, and RTO on COD orders already runs
+    # 20-40% (research/03). An agent placing dozens of COD orders needs
+    # ZERO payment authorization to do it -- there's no protocol on
+    # earth that gates this today. That's a real, India-specific hole,
+    # not a generic security concern, so it gets a real field here.
+    payment_mode: str = "prepaid"
+
     @property
     def total(self) -> int:
         """Total cost of everything in the cart, in paise."""

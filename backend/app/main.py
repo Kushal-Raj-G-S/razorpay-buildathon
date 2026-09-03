@@ -30,6 +30,7 @@ real database (SQLite by default, Postgres if DATABASE_URL is set) --
 not in-memory dictionaries that vanish on restart.
 """
 import json
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -248,6 +249,7 @@ class CheckoutRequest(BaseModel):
     agent_id: str
     items: list[CartItem]
     signature_hex: str | None = None  # signs the exact `items` list, see engine/identity.py
+    payment_mode: str = "prepaid"     # "prepaid" | "cod" -- see models/cart.py
 
 
 @app.post("/checkout-sessions")
@@ -275,9 +277,15 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
     if public_key_hex and req.signature_hex:
         identity_verified = verify_agent_signature(req.items, req.signature_hex, public_key_hex)
 
-    cart = Cart(id=f"cart_{req.merchant_id}_{req.agent_id}", merchant_id=req.merchant_id, items=req.items)
+    cart = Cart(id=f"cart_{req.merchant_id}_{req.agent_id}_{time.time_ns()}",
+                merchant_id=req.merchant_id, items=req.items, payment_mode=req.payment_mode)
 
-    receipt = evaluate(cart, policy, agent_id=req.agent_id, identity_verified=identity_verified)
+    recent_order_count = repo.count_recent_orders(
+        session, req.merchant_id, req.agent_id, policy.velocity_window_minutes,
+    )
+
+    receipt = evaluate(cart, policy, agent_id=req.agent_id, identity_verified=identity_verified,
+                        recent_order_count=recent_order_count)
 
     private_key, _ = repo.get_or_create_signing_key(session)
     signed_receipt = sign_receipt(receipt, private_key)
@@ -287,11 +295,18 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
     result = {"receipt": signed_receipt.model_dump(mode="json")}
 
     if signed_receipt.decision.value == "allow":
-        payment = await create_payment_link(
-            amount_paise=cart.total,
-            description=f"Order {cart.id} via agent {req.agent_id}",
-        )
-        result["payment"] = payment
+        if cart.payment_mode == "cod":
+            # Explicitly allowed COD (policy.allow_cod_for_agents) -- no prepayment
+            # exists to collect, so there's nothing to hand to Razorpay. The order is
+            # confirmed on trust the merchant already extended; RTO risk is theirs by
+            # choice, not by an unnoticed default.
+            result["order"] = {"status": "confirmed_cod", "note": "cash on delivery -- no payment link needed"}
+        else:
+            payment = await create_payment_link(
+                amount_paise=cart.total,
+                description=f"Order {cart.id} via agent {req.agent_id}",
+            )
+            result["payment"] = payment
 
     elif signed_receipt.decision.value == "escalate":
         escalation_id = repo.create_escalation(
