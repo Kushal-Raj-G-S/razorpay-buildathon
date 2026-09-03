@@ -174,6 +174,17 @@ export type CatalogProduct = {
   variants: CatalogVariant[];
 };
 
+// Public -- same endpoint a shopping agent calls to browse. Used here so
+// the merchant can see what's already saved, not just what they just
+// generated -- reloading this page used to show a blank form with no
+// sign a catalog existed at all.
+export function searchCatalog(merchantId: string, query: string = "") {
+  return request<{ products: CatalogProduct[] }>(
+    `/catalog/search?merchant_id=${encodeURIComponent(merchantId)}&query=${encodeURIComponent(query)}`,
+    { method: "POST" }
+  );
+}
+
 export function catalogFromText(merchantId: string, rawText: string) {
   return request<{ status: string; product_count: number; catalog: { products: CatalogProduct[] } }>(
     `/catalog/from-text`,

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { catalogFromText, MERCHANT_ID, type CatalogProduct } from "@/lib/api";
+import { catalogFromText, searchCatalog, MERCHANT_ID, type CatalogProduct } from "@/lib/api";
 import { staggerParent, staggerChild } from "@/components/Reveal";
 
 const EXAMPLE = `Blue Tshirt L 499/-
@@ -16,6 +16,20 @@ export default function CatalogPage() {
   const [products, setProducts] = useState<CatalogProduct[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [checkingExisting, setCheckingExisting] = useState(true);
+
+  // Reloading this page used to always show a blank form, even if a
+  // catalog was already saved -- there was no way to tell one existed
+  // without generating a new one. Load what's actually live first.
+  useEffect(() => {
+    searchCatalog(MERCHANT_ID)
+      .then((res) => setProducts(res.products))
+      .catch(() => {
+        // No catalog saved yet for this merchant -- not an error, just
+        // means the form below is genuinely empty state.
+      })
+      .finally(() => setCheckingExisting(false));
+  }, []);
 
   async function handleIngest() {
     setLoading(true);
@@ -56,10 +70,17 @@ export default function CatalogPage() {
         </div>
       </div>
 
+      {checkingExisting && <p className="label-eyebrow">Checking your saved catalog…</p>}
+      {!checkingExisting && !products && (
+        <p className="text-sm text-ink-muted">
+          Nothing saved yet — paste your products above to create your first catalog.
+        </p>
+      )}
+
       {products && (
         <motion.div initial="hidden" animate="visible" variants={staggerParent}>
           <motion.p variants={staggerChild} className="label-eyebrow mb-4">
-            {products.length} product{products.length !== 1 ? "s" : ""} found
+            {products.length} product{products.length !== 1 ? "s" : ""} live in your catalog right now
           </motion.p>
           <div className="card divide-y divide-border overflow-hidden">
             {products.map((p) => {

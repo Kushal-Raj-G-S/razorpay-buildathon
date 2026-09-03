@@ -147,9 +147,6 @@ export default function Home() {
         </div>
       </section>
 
-      <p className="text-xs text-ink-faint text-center py-10">
-        Backend must be running on http://127.0.0.1:8000
-      </p>
     </div>
   );
 }
