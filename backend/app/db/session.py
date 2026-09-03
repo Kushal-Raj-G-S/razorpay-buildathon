@@ -5,7 +5,10 @@ SQLModel code would work against real Postgres later by changing one
 line (DATABASE_URL), since SQLModel sits on top of SQLAlchemy.
 """
 import os
+from dotenv import load_dotenv
 from sqlmodel import SQLModel, Session, create_engine
+
+load_dotenv()
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./warrant.db")
 

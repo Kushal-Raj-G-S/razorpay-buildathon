@@ -82,6 +82,35 @@ class ProductRow(SQLModel, table=True):
     variants: list = Field(sa_column=Column(JSON))  # list of {id, title, price, category, available, sku}
 
 
+class MerchantRow(SQLModel, table=True):
+    """
+    A shop owner's account. The api_key_hash is a SHA-256 hash -- the
+    real key is shown to the merchant exactly once, at registration, and
+    never stored or logged anywhere in plain text.
+    """
+    __tablename__ = "merchants"
+
+    merchant_id: str = Field(primary_key=True)
+    api_key_hash: str
+    created_at: datetime = Field(default_factory=_now)
+
+
+class IdempotencyRow(SQLModel, table=True):
+    """
+    If an AI agent's network hiccups and it retries the exact same
+    checkout request, this stops us from creating a second order (and a
+    second real payment link) for something that already happened once.
+    Real protocols (ACP, UCP -- see research/06-protocols.md) require an
+    Idempotency-Key header for exactly this reason.
+    """
+    __tablename__ = "idempotency_keys"
+
+    key: str = Field(primary_key=True)          # the Idempotency-Key header value
+    merchant_id: str
+    response_json: str                          # the exact response we sent the first time
+    created_at: datetime = Field(default_factory=_now)
+
+
 class SigningKeyRow(SQLModel, table=True):
     """
     The shop's Ed25519 keypair for signing receipts. Generated once,

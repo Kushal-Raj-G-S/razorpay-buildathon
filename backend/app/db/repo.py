@@ -7,7 +7,10 @@ session.py's DATABASE_URL.
 """
 from datetime import datetime, timezone
 from sqlmodel import Session, select
-from app.db.models import PolicyRow, AgentRow, ReceiptRow, EscalationRow, ProductRow, SigningKeyRow
+from app.db.models import (
+    PolicyRow, AgentRow, ReceiptRow, EscalationRow, ProductRow, SigningKeyRow,
+    MerchantRow, IdempotencyRow,
+)
 from app.models.policy import Policy
 from app.models.receipt import Receipt, RuleResult, Decision
 from app.models.cart import CartItem
@@ -27,6 +30,29 @@ def get_or_create_signing_key(session: Session) -> tuple[bytes, bytes]:
     session.add(row)
     session.commit()
     return private_bytes, public_bytes
+
+
+# ---------- Merchants (auth) ----------
+
+def merchant_exists(session: Session, merchant_id: str) -> bool:
+    return session.get(MerchantRow, merchant_id) is not None
+
+
+def create_merchant(session: Session, merchant_id: str, api_key_hash: str) -> None:
+    session.add(MerchantRow(merchant_id=merchant_id, api_key_hash=api_key_hash))
+    session.commit()
+
+
+# ---------- Idempotency (stop a retried request from double-charging) ----------
+
+def get_idempotent_response(session: Session, key: str) -> str | None:
+    row = session.get(IdempotencyRow, key)
+    return row.response_json if row else None
+
+
+def save_idempotent_response(session: Session, key: str, merchant_id: str, response_json: str) -> None:
+    session.add(IdempotencyRow(key=key, merchant_id=merchant_id, response_json=response_json))
+    session.commit()
 
 
 # ---------- Policy ----------

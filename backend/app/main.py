@@ -4,24 +4,34 @@ from an AI agent trying to shop, or from our own Next.js dashboard.
 
 Endpoints, in plain words:
   GET  /.well-known/ucp          -- "here's how to talk to this shop" (industry standard discovery)
-  POST /catalog                   -- upload a clean catalog directly
-  POST /catalog/from-text         -- AI turns messy product text into a clean catalog
-  POST /catalog/search            -- "what do you sell?"
-  POST /policy                    -- shop owner saves their rules directly
-  POST /policy/draft-from-text    -- AI drafts rules from plain English (does NOT save)
-  GET  /policy/{merchant_id}      -- read the current rules
-  POST /agents/register           -- an agent proves it has a real key, ahead of time
-  POST /checkout-sessions         -- an agent tries to buy something -- the bouncer runs here
-  GET  /receipts                  -- every past decision, signed
-  GET  /escalations               -- orders waiting for a human to approve or reject
-  POST /escalations/{id}/review   -- a human actually approves or rejects one
-  POST /agents/{agent_id}/revoke  -- shop owner kills an agent's access immediately
+  POST /merchants/register       -- a shop owner creates their account, gets a secret key ONCE
+  POST /catalog                   -- upload a clean catalog directly           [merchant-only]
+  POST /catalog/from-text         -- AI turns messy product text into a clean catalog [merchant-only]
+  POST /catalog/search            -- "what do you sell?"                       [public -- agents need this]
+  POST /policy                    -- shop owner saves their rules directly     [merchant-only]
+  POST /policy/draft-from-text    -- AI drafts rules from plain English        [merchant-only, does NOT save]
+  GET  /policy/{merchant_id}      -- read the current rules                    [public -- agents need this]
+  POST /agents/register           -- an agent proves it has a real key, ahead of time [public -- agents self-register]
+  POST /checkout-sessions         -- an agent tries to buy something -- the bouncer runs here [public]
+  GET  /receipts                  -- every past decision, signed               [merchant-only]
+  GET  /escalations               -- orders waiting for a human to approve     [merchant-only]
+  POST /escalations/{id}/review   -- a human actually approves or rejects one  [merchant-only]
+  POST /agents/{agent_id}/revoke  -- shop owner kills an agent's access        [merchant-only]
+
+"[merchant-only]" means the caller must send `Authorization: Bearer <api_key>`
+proving they own that merchant_id -- see app/auth.py. Before this, ANY
+request carrying a merchant_id string could rewrite that shop's rules or
+approve their orders. "[public]" endpoints are the ones a real AI
+shopping agent needs to call with no prior relationship to the merchant,
+same as any real storefront.
 
 Every read/write to real data goes through app/db/repo.py, backed by a
 real database (SQLite by default, Postgres if DATABASE_URL is set) --
 not in-memory dictionaries that vanish on restart.
 """
-from fastapi import FastAPI, HTTPException, Depends
+import json
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -29,15 +39,25 @@ from sqlmodel import Session
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Catalog, Product, Variant
 from app.models.policy import Policy
+from app.models.receipt import Receipt
 from app.engine.evaluate import evaluate
 from app.engine.signing import sign_receipt
 from app.engine.identity import verify_agent_signature
 from app.razorpay_client import create_payment_link
 from app import ai_client
+from app.auth import require_merchant_auth, generate_api_key, _hash_key
 from app.db.session import init_db, get_session
 from app.db import repo
 
-app = FastAPI(title="Warrant", description="The merchant's side of agentic commerce")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    print("Warrant is up. Database ready, signing key loaded (persistent).")
+    yield
+
+
+app = FastAPI(title="Warrant", description="The merchant's side of agentic commerce", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,10 +67,8 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-def startup():
-    init_db()
-    print("Warrant is up. Database ready, signing key loaded (persistent).")
+def _auth(merchant_id: str, session: Session, authorization: str | None) -> None:
+    require_merchant_auth(merchant_id, session, authorization)
 
 
 @app.get("/.well-known/ucp")
@@ -71,6 +89,32 @@ def ucp_profile():
     }
 
 
+# ---------- Merchant accounts ----------
+
+class MerchantRegisterRequest(BaseModel):
+    merchant_id: str
+
+
+@app.post("/merchants/register")
+def register_merchant(req: MerchantRegisterRequest, session: Session = Depends(get_session)):
+    """
+    Creates a shop account. Returns the API key exactly once -- same
+    rule as Razorpay's own dashboard: if you lose it, you generate a new
+    one, you don't get to see the old one again. We only ever store its
+    SHA-256 hash.
+    """
+    if repo.merchant_exists(session, req.merchant_id):
+        raise HTTPException(409, "merchant already registered")
+
+    api_key = generate_api_key()
+    repo.create_merchant(session, req.merchant_id, _hash_key(api_key))
+    return {
+        "merchant_id": req.merchant_id,
+        "api_key": api_key,
+        "warning": "save this now -- it will never be shown again",
+    }
+
+
 # ---------- Catalog ----------
 
 class CatalogUploadRequest(BaseModel):
@@ -79,7 +123,9 @@ class CatalogUploadRequest(BaseModel):
 
 
 @app.post("/catalog")
-def upload_catalog(req: CatalogUploadRequest, session: Session = Depends(get_session)):
+def upload_catalog(req: CatalogUploadRequest, session: Session = Depends(get_session),
+                    authorization: str | None = Header(None)):
+    _auth(req.merchant_id, session, authorization)
     repo.save_catalog(session, req.catalog)
     return {"status": "saved", "product_count": len(req.catalog.products)}
 
@@ -90,7 +136,8 @@ class CatalogFromTextRequest(BaseModel):
 
 
 @app.post("/catalog/from-text")
-async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depends(get_session)):
+async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depends(get_session),
+                             authorization: str | None = Header(None)):
     """
     AI reads messy product text and produces a clean structured catalog.
     This is where AI genuinely belongs -- turning fuzzy human input into
@@ -98,6 +145,8 @@ async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depe
     production version could show a draft for approval first, same as
     the policy compiler below.
     """
+    _auth(req.merchant_id, session, authorization)
+
     if not ai_client.is_configured():
         raise HTTPException(503, "AI not configured -- set NVIDIA_API_KEY in backend/.env")
 
@@ -123,6 +172,7 @@ async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depe
 
 @app.post("/catalog/search")
 def search_catalog(merchant_id: str, query: str = "", session: Session = Depends(get_session)):
+    """No auth -- this is the endpoint a shopping agent calls to browse. Same as a real storefront."""
     catalog = repo.get_catalog(session, merchant_id)
     if not catalog:
         raise HTTPException(404, "no catalog for this merchant yet")
@@ -136,7 +186,9 @@ def search_catalog(merchant_id: str, query: str = "", session: Session = Depends
 # ---------- Policy ----------
 
 @app.post("/policy")
-def save_policy_endpoint(policy: Policy, session: Session = Depends(get_session)):
+def save_policy_endpoint(policy: Policy, session: Session = Depends(get_session),
+                          authorization: str | None = Header(None)):
+    _auth(policy.merchant_id, session, authorization)
     repo.save_policy(session, policy)
     return {"status": "saved"}
 
@@ -147,13 +199,16 @@ class PolicyDraftRequest(BaseModel):
 
 
 @app.post("/policy/draft-from-text")
-async def draft_policy_from_text(req: PolicyDraftRequest):
+async def draft_policy_from_text(req: PolicyDraftRequest, session: Session = Depends(get_session),
+                                  authorization: str | None = Header(None)):
     """
     AI drafts a policy from plain English. Returns the draft -- does NOT
     save it. The merchant must review it and POST /policy themselves to
     actually apply it. This split (AI drafts, human approves, code
     enforces) is the whole thesis of the project.
     """
+    _auth(req.merchant_id, session, authorization)
+
     if not ai_client.is_configured():
         raise HTTPException(503, "AI not configured -- set NVIDIA_API_KEY in backend/.env")
 
@@ -163,6 +218,7 @@ async def draft_policy_from_text(req: PolicyDraftRequest):
 
 @app.get("/policy/{merchant_id}")
 def get_policy_endpoint(merchant_id: str, session: Session = Depends(get_session)):
+    """No auth -- a shopping agent needs to read the rules before it can shop here."""
     policy = repo.get_policy(session, merchant_id)
     if not policy:
         raise HTTPException(404, "no policy set for this merchant yet")
@@ -178,8 +234,9 @@ class AgentRegisterRequest(BaseModel):
 
 @app.post("/agents/register")
 def register_agent_endpoint(req: AgentRegisterRequest, session: Session = Depends(get_session)):
-    """An agent must do this once, ahead of time, before it can ever
-    pass the identity check on a real checkout."""
+    """No merchant auth -- this is the AGENT proving its own identity, not a merchant
+    management action. Any agent may register itself; whether it can actually buy
+    anything is still gated by the merchant's policy at checkout time."""
     repo.register_agent(session, req.agent_id, req.public_key_hex)
     return {"status": "registered", "agent_id": req.agent_id}
 
@@ -194,7 +251,17 @@ class CheckoutRequest(BaseModel):
 
 
 @app.post("/checkout-sessions")
-async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)):
+async def checkout(req: CheckoutRequest, session: Session = Depends(get_session),
+                    idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
+    # If we've seen this exact Idempotency-Key before, hand back the SAME
+    # answer instead of processing the cart twice -- a retried request
+    # (network hiccup, agent bug) must never create a second real order.
+    # Same requirement as the real ACP/UCP specs, see research/06.
+    if idempotency_key:
+        cached = repo.get_idempotent_response(session, idempotency_key)
+        if cached:
+            return json.loads(cached)
+
     if repo.is_agent_revoked(session, req.agent_id):
         raise HTTPException(403, "this agent's access has been revoked by the merchant")
 
@@ -217,7 +284,7 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
 
     receipt_id = repo.save_receipt(session, signed_receipt, req.items)
 
-    result = {"receipt": signed_receipt}
+    result = {"receipt": signed_receipt.model_dump(mode="json")}
 
     if signed_receipt.decision.value == "allow":
         payment = await create_payment_link(
@@ -233,19 +300,24 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
         result["escalation_id"] = escalation_id
         result["note"] = "every rule passed, but this order needs a human to approve it"
 
+    if idempotency_key:
+        repo.save_idempotent_response(session, idempotency_key, req.merchant_id, json.dumps(result))
+
     return result
 
 
 # ---------- Receipts (for the dashboard) ----------
 
 @app.get("/receipts")
-def list_receipts_endpoint(merchant_id: str | None = None, session: Session = Depends(get_session)):
+def list_receipts_endpoint(merchant_id: str, session: Session = Depends(get_session),
+                            authorization: str | None = Header(None)):
+    _auth(merchant_id, session, authorization)
     return repo.list_receipts(session, merchant_id)
 
 
 @app.get("/signing-public-key")
 def get_public_key(session: Session = Depends(get_session)):
-    """So anyone can independently verify our receipts are genuine."""
+    """Public on purpose -- anyone must be able to independently verify our receipts are genuine."""
     _, public_key = repo.get_or_create_signing_key(session)
     return {"public_key_hex": public_key.hex()}
 
@@ -253,8 +325,10 @@ def get_public_key(session: Session = Depends(get_session)):
 # ---------- Escalations: the human-review queue ----------
 
 @app.get("/escalations")
-def list_escalations_endpoint(merchant_id: str | None = None, status: str = "pending",
-                               session: Session = Depends(get_session)):
+def list_escalations_endpoint(merchant_id: str, status: str = "pending",
+                               session: Session = Depends(get_session),
+                               authorization: str | None = Header(None)):
+    _auth(merchant_id, session, authorization)
     return repo.list_escalations(session, merchant_id, status)
 
 
@@ -265,15 +339,19 @@ class ReviewRequest(BaseModel):
 
 @app.post("/escalations/{escalation_id}/review")
 async def review_escalation_endpoint(escalation_id: int, req: ReviewRequest,
-                                      session: Session = Depends(get_session)):
+                                      session: Session = Depends(get_session),
+                                      authorization: str | None = Header(None)):
     """
     A real human decision. If approved, the payment actually gets
     created now -- money only moves after both the automated rules AND
     a person have said yes.
     """
-    row = repo.review_escalation(session, escalation_id, req.approve, req.note)
-    if not row:
+    existing = repo.get_escalation(session, escalation_id)
+    if not existing:
         raise HTTPException(404, "no such escalation")
+    _auth(existing.merchant_id, session, authorization)
+
+    row = repo.review_escalation(session, escalation_id, req.approve, req.note)
 
     result = {"escalation": row}
     if req.approve:
@@ -288,12 +366,16 @@ async def review_escalation_endpoint(escalation_id: int, req: ReviewRequest,
 # ---------- Revocation ----------
 
 @app.post("/agents/{agent_id}/revoke")
-def revoke_agent(agent_id: str, session: Session = Depends(get_session)):
+def revoke_agent(agent_id: str, merchant_id: str, session: Session = Depends(get_session),
+                  authorization: str | None = Header(None)):
+    _auth(merchant_id, session, authorization)
     repo.set_agent_revoked(session, agent_id, True)
     return {"status": "revoked", "agent_id": agent_id}
 
 
 @app.post("/agents/{agent_id}/unrevoke")
-def unrevoke_agent(agent_id: str, session: Session = Depends(get_session)):
+def unrevoke_agent(agent_id: str, merchant_id: str, session: Session = Depends(get_session),
+                    authorization: str | None = Header(None)):
+    _auth(merchant_id, session, authorization)
     repo.set_agent_revoked(session, agent_id, False)
     return {"status": "unrevoked", "agent_id": agent_id}

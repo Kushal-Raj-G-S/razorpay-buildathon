@@ -1,5 +1,11 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+// This dashboard manages ONE demo merchant. In a real multi-merchant
+// product this key would come from a login, not an env var -- but the
+// backend endpoint it's checked against (app/auth.py) is the same one
+// a real merchant login would sit in front of.
+const MERCHANT_API_KEY = process.env.NEXT_PUBLIC_MERCHANT_API_KEY || "";
+
 export type RuleResult = {
   rule_name: string;
   passed: boolean;
@@ -28,10 +34,21 @@ export type Policy = {
 
 export const MERCHANT_ID = "shop_123";
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+async function request<T>(path: string, options?: RequestInit, authed = false): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authed) {
+    if (!MERCHANT_API_KEY) {
+      throw new Error(
+        "No merchant API key configured. Register via POST /merchants/register and set " +
+          "NEXT_PUBLIC_MERCHANT_API_KEY in frontend/.env.local"
+      );
+    }
+    headers["Authorization"] = `Bearer ${MERCHANT_API_KEY}`;
+  }
+
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
-    headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
+    headers: { ...headers, ...(options?.headers || {}) },
   });
   if (!res.ok) {
     const body = await res.text();
@@ -40,19 +57,33 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// ---------- Merchant account ----------
+
+export function registerMerchant(merchantId: string) {
+  return request<{ merchant_id: string; api_key: string; warning: string }>(`/merchants/register`, {
+    method: "POST",
+    body: JSON.stringify({ merchant_id: merchantId }),
+  });
+}
+
+// ---------- Policy (write requires the merchant's key; read does not) ----------
+
 export function getPolicy(merchantId: string) {
   return request<Policy>(`/policy/${merchantId}`);
 }
 
 export function savePolicy(policy: Policy) {
-  return request<{ status: string }>(`/policy`, {
-    method: "POST",
-    body: JSON.stringify(policy),
-  });
+  return request<{ status: string }>(
+    `/policy`,
+    { method: "POST", body: JSON.stringify(policy) },
+    true
+  );
 }
 
+// ---------- Receipts (merchant-only -- it's their business data) ----------
+
 export function listReceipts(merchantId: string) {
-  return request<Receipt[]>(`/receipts?merchant_id=${merchantId}`);
+  return request<Receipt[]>(`/receipts?merchant_id=${merchantId}`, undefined, true);
 }
 
 export type CartItemInput = {
@@ -63,6 +94,8 @@ export type CartItemInput = {
   quantity: number;
 };
 
+// ---------- Checkout (public -- this is what a shopping agent calls) ----------
+
 export function tryCheckout(merchantId: string, agentId: string, items: CartItemInput[]) {
   return request<{ receipt: Receipt; payment?: Record<string, unknown> }>(`/checkout-sessions`, {
     method: "POST",
@@ -70,15 +103,25 @@ export function tryCheckout(merchantId: string, agentId: string, items: CartItem
   });
 }
 
-export function revokeAgent(agentId: string) {
-  return request<{ status: string }>(`/agents/${agentId}/revoke`, { method: "POST" });
+// ---------- Revocation (merchant-only) ----------
+
+export function revokeAgent(agentId: string, merchantId: string) {
+  return request<{ status: string }>(
+    `/agents/${agentId}/revoke?merchant_id=${merchantId}`,
+    { method: "POST" },
+    true
+  );
 }
 
-export function unrevokeAgent(agentId: string) {
-  return request<{ status: string }>(`/agents/${agentId}/unrevoke`, { method: "POST" });
+export function unrevokeAgent(agentId: string, merchantId: string) {
+  return request<{ status: string }>(
+    `/agents/${agentId}/unrevoke?merchant_id=${merchantId}`,
+    { method: "POST" },
+    true
+  );
 }
 
-// ---------- AI-drafted policy (human must approve before it applies) ----------
+// ---------- AI-drafted policy (merchant-only; human must still approve before it applies) ----------
 
 export type PolicyDraft = {
   merchant_id: string;
@@ -90,13 +133,14 @@ export type PolicyDraft = {
 };
 
 export function draftPolicyFromText(merchantId: string, plainEnglish: string) {
-  return request<{ draft: PolicyDraft; note: string }>(`/policy/draft-from-text`, {
-    method: "POST",
-    body: JSON.stringify({ merchant_id: merchantId, plain_english: plainEnglish }),
-  });
+  return request<{ draft: PolicyDraft; note: string }>(
+    `/policy/draft-from-text`,
+    { method: "POST", body: JSON.stringify({ merchant_id: merchantId, plain_english: plainEnglish }) },
+    true
+  );
 }
 
-// ---------- AI catalog ingestion ----------
+// ---------- AI catalog ingestion (merchant-only) ----------
 
 export type CatalogVariant = {
   id: string;
@@ -117,11 +161,12 @@ export type CatalogProduct = {
 export function catalogFromText(merchantId: string, rawText: string) {
   return request<{ status: string; product_count: number; catalog: { products: CatalogProduct[] } }>(
     `/catalog/from-text`,
-    { method: "POST", body: JSON.stringify({ merchant_id: merchantId, raw_text: rawText }) }
+    { method: "POST", body: JSON.stringify({ merchant_id: merchantId, raw_text: rawText }) },
+    true
   );
 }
 
-// ---------- Escalations: the human review queue ----------
+// ---------- Escalations: the human review queue (merchant-only) ----------
 
 export type Escalation = {
   id: number;
@@ -137,12 +182,17 @@ export type Escalation = {
 };
 
 export function listEscalations(merchantId: string, status: string = "pending") {
-  return request<Escalation[]>(`/escalations?merchant_id=${merchantId}&status=${status}`);
+  return request<Escalation[]>(
+    `/escalations?merchant_id=${merchantId}&status=${status}`,
+    undefined,
+    true
+  );
 }
 
 export function reviewEscalation(escalationId: number, approve: boolean, note?: string) {
   return request<{ escalation: Escalation; payment?: Record<string, unknown> }>(
     `/escalations/${escalationId}/review`,
-    { method: "POST", body: JSON.stringify({ approve, note: note || null }) }
+    { method: "POST", body: JSON.stringify({ approve, note: note || null }) },
+    true
   );
 }

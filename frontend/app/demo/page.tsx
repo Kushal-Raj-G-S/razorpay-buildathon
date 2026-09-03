@@ -87,10 +87,10 @@ export default function DemoPage() {
 
   async function toggleRevoke() {
     if (revoked) {
-      await unrevokeAgent(AGENT_ID);
+      await unrevokeAgent(AGENT_ID, MERCHANT_ID);
       setRevoked(false);
     } else {
-      await revokeAgent(AGENT_ID);
+      await revokeAgent(AGENT_ID, MERCHANT_ID);
       setRevoked(true);
     }
   }
