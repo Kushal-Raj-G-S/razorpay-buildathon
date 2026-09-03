@@ -2,13 +2,40 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { listEscalations, reviewEscalation, MERCHANT_ID, type Escalation } from "@/lib/api";
+import {
+  listEscalations,
+  reviewEscalation,
+  getEscalationAdvice,
+  MERCHANT_ID,
+  type Escalation,
+  type EscalationAdvice,
+} from "@/lib/api";
+
+const RECOMMENDATION_STYLE: Record<string, string> = {
+  approve: "badge-allow",
+  reject: "badge-block",
+  needs_human_judgment: "badge-neutral",
+};
 
 export default function EscalationsPage() {
   const [pending, setPending] = useState<Escalation[]>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState<Record<number, string>>({});
   const [message, setMessage] = useState("");
+  const [advice, setAdvice] = useState<Record<number, EscalationAdvice>>({});
+  const [advising, setAdvising] = useState<number | null>(null);
+
+  async function askForAdvice(id: number) {
+    setAdvising(id);
+    try {
+      const { advice: a } = await getEscalationAdvice(id);
+      setAdvice((prev) => ({ ...prev, [id]: a }));
+    } catch (e) {
+      setMessage(`Advisor failed: ${(e as Error).message}`);
+    } finally {
+      setAdvising(null);
+    }
+  }
 
   async function refresh() {
     setLoading(true);
@@ -98,6 +125,38 @@ export default function EscalationsPage() {
                   </div>
                 ))}
               </div>
+
+              {advice[e.id] ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mx-6 mb-4 rounded-lg border border-border bg-paper-2/50 p-4"
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="label-eyebrow">AI advisor</span>
+                    <span className={`badge ${RECOMMENDATION_STYLE[advice[e.id].recommendation]}`}>
+                      {advice[e.id].recommendation.replace(/_/g, " ")}
+                    </span>
+                    <span className="text-xs text-ink-faint">
+                      {advice[e.id].confidence} confidence
+                    </span>
+                  </div>
+                  <p className="text-sm text-ink-muted">{advice[e.id].reasoning}</p>
+                  <p className="text-xs text-ink-faint mt-2">
+                    A suggestion only — you still decide below.
+                  </p>
+                </motion.div>
+              ) : (
+                <div className="px-6 pb-4">
+                  <button
+                    onClick={() => askForAdvice(e.id)}
+                    disabled={advising === e.id}
+                    className="btn btn-ghost text-xs border border-border"
+                  >
+                    {advising === e.id ? "Thinking…" : "Ask the AI advisor"}
+                  </button>
+                </div>
+              )}
 
               <div className="px-6 pb-5 flex flex-wrap items-center gap-3">
                 <input

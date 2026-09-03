@@ -108,3 +108,53 @@ def test_approving_the_same_escalation_twice_does_not_create_a_second_payment(cl
     # Only the first call ever reached create_payment_link
     assert getattr(_fake_create_payment_link, "counter", 0) == 1
     assert first_payment_id == "plink_FAKE1"
+
+
+def test_a_failed_payment_leaves_the_escalation_retryable_not_stuck(client, monkeypatch):
+    """
+    The bug this closes was found live, not by inspection: Razorpay's API
+    returned 429 mid-session from earlier load testing, the payment call
+    raised, but the escalation had already been committed to "approved"
+    with no payment ever created -- and a retry was permanently refused
+    with 409, since the endpoint believed the decision was already made.
+    This proves the fix: a failed payment leaves the escalation exactly
+    where it was, pending, so the same request can simply be retried once
+    Razorpay stops failing.
+    """
+    key = client.post("/merchants/register", json={"merchant_id": "shop_retry"}).json()["api_key"]
+    auth = {"Authorization": f"Bearer {key}"}
+    client.post("/policy", headers=auth, json={
+        "merchant_id": "shop_retry", "max_order_value": 1000000,
+        "deny_categories": [], "escalate_above": 100,
+    })
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from app.engine.identity import canonical_cart_bytes
+    priv = Ed25519PrivateKey.generate()
+    pub = priv.public_key().public_bytes_raw().hex()
+    client.post("/agents/register", json={"agent_id": "retry-agent", "public_key_hex": pub})
+    items = [{"id": "shoes", "title": "Shoes", "price": 700000, "category": "footwear", "quantity": 1}]
+    sig = priv.sign(canonical_cart_bytes([CartItem(**i) for i in items])).hex()
+
+    checkout = client.post("/checkout-sessions", json={
+        "merchant_id": "shop_retry", "agent_id": "retry-agent", "items": items, "signature_hex": sig,
+    }).json()
+    esc_id = checkout["escalation_id"]
+
+    async def _failing_create_payment_link(amount_paise: int, description: str, currency: str = "INR"):
+        raise RuntimeError("simulated Razorpay 429 -- rate limited")
+
+    monkeypatch.setattr(main_module, "create_payment_link", _failing_create_payment_link)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"/escalations/{esc_id}/review", headers=auth, json={"approve": True})
+
+    # Still pending -- NOT stuck as "approved with no payment"
+    pending = client.get("/escalations", headers=auth, params={"merchant_id": "shop_retry"}).json()
+    assert any(e["id"] == esc_id and e["status"] == "pending" for e in pending)
+
+    # Razorpay recovers; the exact same request now succeeds
+    monkeypatch.setattr(main_module, "create_payment_link", _fake_create_payment_link)
+    retry = client.post(f"/escalations/{esc_id}/review", headers=auth, json={"approve": True})
+    assert retry.status_code == 200
+    assert retry.json()["escalation"]["status"] == "approved"

@@ -1,0 +1,44 @@
+# One command, both services -- the actual answer to "make it easy for
+# Razorpay to run this anywhere." Neither Dockerfile was written blind:
+# both were verified locally first (backend via pytest + live uvicorn,
+# frontend via a real `npm run build` + `npm run start`, which caught a
+# real type bug that `next dev` had been silently letting through).
+#
+# Usage:
+#   cp backend/.env.example backend/.env   # fill in real keys
+#   docker compose up --build
+#   curl -X POST http://localhost:8000/merchants/register ...
+#
+# Postgres is optional -- omit DATABASE_URL and the backend falls back
+# to SQLite in the named volume below, same default as running it
+# without Docker at all.
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    volumes:
+      - warrant-data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/.well-known/ucp')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_MERCHANT_API_KEY: ${WARRANT_MERCHANT_API_KEY:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  warrant-data:

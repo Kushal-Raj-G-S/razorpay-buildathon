@@ -30,6 +30,9 @@ export type Policy = {
   max_units_per_sku: number;
   escalate_above: number | null;
   require_signed_identity: boolean;
+  allow_cod_for_agents: boolean;
+  max_orders_per_agent_per_window: number | null;
+  velocity_window_minutes: number;
 };
 
 export const MERCHANT_ID = "shop_123";
@@ -140,6 +143,9 @@ export type PolicyDraft = {
   max_units_per_sku: number;
   escalate_above: number | null;
   require_signed_identity: boolean;
+  allow_cod_for_agents: boolean;
+  max_orders_per_agent_per_window: number | null;
+  velocity_window_minutes: number;
 };
 
 export function draftPolicyFromText(merchantId: string, plainEnglish: string) {
@@ -203,6 +209,20 @@ export function reviewEscalation(escalationId: number, approve: boolean, note?: 
   return request<{ escalation: Escalation; payment?: Record<string, unknown> }>(
     `/escalations/${escalationId}/review`,
     { method: "POST", body: JSON.stringify({ approve, note: note || null }) },
+    true
+  );
+}
+
+export type EscalationAdvice = {
+  recommendation: "approve" | "reject" | "needs_human_judgment";
+  reasoning: string;
+  confidence: "low" | "medium" | "high";
+};
+
+export function getEscalationAdvice(escalationId: number) {
+  return request<{ escalation_id: number; advice: EscalationAdvice }>(
+    `/escalations/${escalationId}/advice`,
+    undefined,
     true
   );
 }

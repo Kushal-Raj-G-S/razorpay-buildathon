@@ -15,6 +15,7 @@ Endpoints, in plain words:
   POST /checkout-sessions         -- an agent tries to buy something -- the bouncer runs here [public]
   GET  /receipts                  -- every past decision, signed               [merchant-only]
   GET  /escalations               -- orders waiting for a human to approve     [merchant-only]
+  GET  /escalations/{id}/advice   -- AI drafts a recommendation, DECIDES NOTHING [merchant-only]
   POST /escalations/{id}/review   -- a human actually approves or rejects one  [merchant-only]
   POST /agents/{agent_id}/revoke  -- shop owner kills an agent's access        [merchant-only]
   POST /red-team/run              -- an autonomous AI tries to break your rules [merchant-only]
@@ -26,6 +27,18 @@ request carrying a merchant_id string could rewrite that shop's rules or
 approve their orders. "[public]" endpoints are the ones a real AI
 shopping agent needs to call with no prior relationship to the merchant,
 same as any real storefront.
+
+Two tiers, not one undifferentiated pile of endpoints. THE GATE --
+checkout-sessions, policy read, catalog search -- is what an autonomous
+shopping agent calls on every purchase attempt, must stay fast and cheap,
+and never touches an LLM: this is the whole "no AI in the decision path"
+claim, made structurally true rather than just asserted. THE ADVISORS --
+catalog-from-text, policy/draft-from-text, escalations/{id}/advice,
+red-team/run -- run occasionally, genuinely benefit from reasoning, and
+their output is ALWAYS a draft: a human clicks Save, or Approve, or
+reads a transcript. Nothing an Advisor produces ever becomes a real
+decision by itself. Mixing these two tiers into one endpoint would blur
+the exact distinction the whole project is built to keep sharp.
 
 Every read/write to real data goes through app/db/repo.py, backed by a
 real database (SQLite by default, Postgres if DATABASE_URL is set) --
@@ -383,6 +396,33 @@ def list_escalations_endpoint(merchant_id: str, status: str = "pending",
     return repo.list_escalations(session, merchant_id, status)
 
 
+@app.get("/escalations/{escalation_id}/advice")
+async def advise_on_escalation_endpoint(escalation_id: int, session: Session = Depends(get_session),
+                                         authorization: str | None = Header(None)):
+    """
+    Drafts a recommendation for the human reviewing this escalation --
+    never decides anything itself. Same tier as policy drafting and
+    catalog normalization: an AI Advisor whose output is only ever a
+    suggestion a human still has to act on via POST .../review.
+    """
+    existing = repo.get_escalation(session, escalation_id)
+    if not existing:
+        raise HTTPException(404, "no such escalation")
+    _auth(existing.merchant_id, session, authorization)
+
+    if not ai_client.is_configured():
+        raise HTTPException(503, "AI not configured -- set NVIDIA_API_KEY in backend/.env")
+
+    history = repo.summarize_agent_history(session, existing.merchant_id, existing.agent_id)
+    advice = await ai_client.advise_on_escalation(
+        cart_items=existing.cart_items,
+        cart_total_rupees=existing.cart_total / 100,
+        agent_id=existing.agent_id,
+        recent_agent_history=history,
+    )
+    return {"escalation_id": escalation_id, "advice": advice}
+
+
 class ReviewRequest(BaseModel):
     approve: bool
     note: str | None = None
@@ -401,21 +441,48 @@ async def review_escalation_endpoint(escalation_id: int, req: ReviewRequest,
     if not existing:
         raise HTTPException(404, "no such escalation")
     _auth(existing.merchant_id, session, authorization)
+    if existing.status != "pending":
+        # Cheap pre-check before we do anything expensive below. The
+        # authoritative check still happens inside review_escalation()
+        # against a freshly re-read row, so this is an optimization, not
+        # the actual guard.
+        raise HTTPException(409, f"escalation {escalation_id} was already {existing.status}")
+
+    # For an approval, create the REAL payment link BEFORE committing the
+    # decision as "approved". This ordering matters: a prior version
+    # committed the status first and called Razorpay second, and a live
+    # test caught the actual failure mode -- Razorpay's API returned 429
+    # (rate limited from earlier testing this same session), the payment
+    # call raised, but the escalation was already sitting in the database
+    # as "approved" with no payment ever created and no way to retry,
+    # since a second call to this endpoint now permanently returns 409.
+    # Doing the money-moving step first means a failure here leaves the
+    # escalation exactly where it was -- pending, retryable -- instead of
+    # stuck in a state that claims something happened when it didn't.
+    payment = None
+    if req.approve:
+        payment = await create_payment_link(
+            amount_paise=existing.cart_total,
+            description=f"Order {existing.receipt_id} (human-approved) via agent {existing.agent_id}",
+        )
 
     try:
         row = repo.review_escalation(session, escalation_id, req.approve, req.note)
     except repo.AlreadyReviewedError as e:
-        # A double-click or a network retry must never create a second
-        # payment link. Same principle as Idempotency-Key on checkout,
-        # applied to the one other place this endpoint moves money.
-        raise HTTPException(409, str(e))
+        # Rare: this call's own payment succeeded (if approving) but a
+        # concurrent request won the race to commit the decision first.
+        # The payment link above is real and was already created; it is
+        # not automatically voided here, since we have no way to reverse
+        # a Razorpay payment link from this endpoint. Surfaced explicitly
+        # rather than silently swallowed.
+        raise HTTPException(
+            409,
+            f"{e} -- note: a payment link may have just been created by this "
+            f"request before the conflict was detected: {payment}",
+        )
 
     result = {"escalation": row}
-    if req.approve:
-        payment = await create_payment_link(
-            amount_paise=row.cart_total,
-            description=f"Order {row.receipt_id} (human-approved) via agent {row.agent_id}",
-        )
+    if payment:
         result["payment"] = payment
     return result
 

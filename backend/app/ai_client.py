@@ -150,6 +150,38 @@ Decide your next attempt."""
     return await _chat_json(ADVERSARY_SYSTEM_PROMPT, user_prompt)
 
 
+ESCALATION_ADVISOR_SYSTEM_PROMPT = """You are helping a human merchant decide whether to approve
+or reject an order that passed every automated rule but was flagged for human review because
+of its size. You do NOT make the decision -- you draft a recommendation and a short reason, and
+a human still has to click Approve or Reject themselves. Never claim certainty you don't have.
+
+Respond with ONLY a JSON object of this exact shape:
+{
+  "recommendation": "approve" | "reject" | "needs_human_judgment",
+  "reasoning": "<one or two sentences, plain language, for a busy merchant to skim>",
+  "confidence": "low" | "medium" | "high"
+}
+No explanation outside the JSON, no markdown."""
+
+
+async def advise_on_escalation(cart_items: list[dict], cart_total_rupees: float,
+                                agent_id: str, recent_agent_history: str) -> dict:
+    """
+    Drafts a recommendation for a human reviewing an escalated order.
+    This is advisory only -- see app/db/repo.py's review_escalation,
+    which is the only place a decision actually becomes real, and it
+    only ever accepts a decision from the human clicking a button, never
+    from this function's output directly.
+    """
+    user_prompt = f"""Order total: Rs {cart_total_rupees:.0f}
+Items: {cart_items}
+Agent: {agent_id}
+This agent's recent order history with this merchant: {recent_agent_history or "no prior orders"}
+
+Draft your recommendation."""
+    return await _chat_json(ESCALATION_ADVISOR_SYSTEM_PROMPT, user_prompt)
+
+
 async def compile_policy_text(merchant_id: str, plain_english: str) -> dict:
     """
     Plain English rules -> our Policy schema. The caller MUST show this

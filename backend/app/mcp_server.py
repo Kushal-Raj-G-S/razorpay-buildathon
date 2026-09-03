@@ -19,6 +19,22 @@ place the actual rules live (app/engine/evaluate.py), and this file
 never touches it directly -- so the MCP surface can never drift out of
 sync with the REST surface real merchants and dashboards use.
 
+TWO TIERS OF TOOLS, on purpose, matching main.py's own split:
+
+  THE GATE (always on, no merchant key needed): check_cart,
+  get_merchant_policy, search_catalog. These are what an autonomous
+  shopping agent calls on every purchase attempt. They stay fast, cheap,
+  and are backed by ZERO LLM calls on our side -- this is the "no AI in
+  the decision path" claim made structurally true, not just asserted.
+
+  THE ADVISORS (only appear if WARRANT_MERCHANT_API_KEY is set, since
+  these are merchant actions): run_red_team, list_pending_escalations,
+  advise_on_escalation, decide_escalation. These let a MERCHANT'S OWN
+  ops agent (built in Agent Studio, or anywhere else) work the review
+  queue and test policy changes -- but every one of them either drafts a
+  suggestion or requires an explicit approve/reject, never silently
+  decides anything.
+
 Run it:
   WARRANT_MERCHANT_ID=shop_123 python -m app.mcp_server
 Configure it in an MCP-aware agent host (Claude Agent SDK, Claude
@@ -55,6 +71,12 @@ def _require_merchant() -> str:
         )
     return WARRANT_MERCHANT_ID
 
+
+def _merchant_auth_headers() -> dict:
+    return {"Authorization": f"Bearer {WARRANT_MERCHANT_API_KEY}"}
+
+
+# ============================== THE GATE ==============================
 
 @mcp.tool()
 async def check_cart(
@@ -125,6 +147,11 @@ async def search_catalog(query: str = "") -> dict:
 
 if WARRANT_MERCHANT_API_KEY:
 
+    # ============================ THE ADVISORS =========================
+    # Everything past this point is a merchant action -- gated on having
+    # the merchant's own API key configured, exactly like the equivalent
+    # REST endpoints in main.py require Authorization: Bearer.
+
     @mcp.tool()
     async def run_red_team(goal: str, max_rounds: int = 5) -> dict:
         """
@@ -137,8 +164,61 @@ if WARRANT_MERCHANT_API_KEY:
         async with httpx.AsyncClient(timeout=180) as client:
             response = await client.post(
                 f"{WARRANT_API_URL}/red-team/run",
-                headers={"Authorization": f"Bearer {WARRANT_MERCHANT_API_KEY}"},
+                headers=_merchant_auth_headers(),
                 json={"merchant_id": merchant_id, "goal": goal, "max_rounds": max_rounds},
+            )
+            response.raise_for_status()
+            return response.json()
+
+    @mcp.tool()
+    async def list_pending_escalations() -> dict:
+        """
+        Merchant-only. Orders that passed every automated rule but were
+        too large to auto-approve, waiting for a decision. Use this if
+        you're building an ops agent that helps a merchant work through
+        their review queue -- pair it with advise_on_escalation and
+        decide_escalation below.
+        """
+        merchant_id = _require_merchant()
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(
+                f"{WARRANT_API_URL}/escalations",
+                headers=_merchant_auth_headers(),
+                params={"merchant_id": merchant_id, "status": "pending"},
+            )
+            response.raise_for_status()
+            return {"escalations": response.json()}
+
+    @mcp.tool()
+    async def advise_on_escalation(escalation_id: int) -> dict:
+        """
+        Merchant-only. Drafts a recommendation (approve / reject / needs
+        human judgment) for one pending escalation, with reasoning. This
+        NEVER decides anything by itself -- it only ever informs whatever
+        calls decide_escalation next, which still requires an explicit
+        approve=true/false.
+        """
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.get(
+                f"{WARRANT_API_URL}/escalations/{escalation_id}/advice",
+                headers=_merchant_auth_headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+
+    @mcp.tool()
+    async def decide_escalation(escalation_id: int, approve: bool, note: str = "") -> dict:
+        """
+        Merchant-only. The actual decision on a pending escalation.
+        Calling this with approve=true creates a real Razorpay payment
+        link immediately. Calling it twice on the same escalation fails
+        with a 409 -- a decision, once made, cannot be silently remade.
+        """
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{WARRANT_API_URL}/escalations/{escalation_id}/review",
+                headers=_merchant_auth_headers(),
+                json={"approve": approve, "note": note or None},
             )
             response.raise_for_status()
             return response.json()

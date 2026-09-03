@@ -187,6 +187,26 @@ def count_recent_orders(session: Session, merchant_id: str, agent_id: str, windo
     return len(session.exec(stmt).all())
 
 
+def summarize_agent_history(session: Session, merchant_id: str, agent_id: str, limit: int = 5) -> str:
+    """
+    A short, human-readable line per recent decision for this agent
+    with this merchant -- feeds the escalation advisor (ai_client.py's
+    advise_on_escalation) so its recommendation is informed by whether
+    this agent has a track record here, not just the one order in front
+    of it.
+    """
+    stmt = (
+        select(ReceiptRow)
+        .where(ReceiptRow.merchant_id == merchant_id, ReceiptRow.agent_id == agent_id)
+        .order_by(ReceiptRow.id.desc())
+        .limit(limit)
+    )
+    rows = session.exec(stmt).all()
+    if not rows:
+        return ""
+    return "; ".join(f"{r.decision} (Rs {r.cart_total/100:.0f})" for r in rows)
+
+
 # ---------- Escalations (the human-review queue) ----------
 
 def create_escalation(session: Session, receipt_id: int, merchant_id: str, agent_id: str,
