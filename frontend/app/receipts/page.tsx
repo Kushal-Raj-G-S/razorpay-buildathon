@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { listReceipts, MERCHANT_ID, type Receipt } from "@/lib/api";
 
-const DECISION_STYLE: Record<Receipt["decision"], string> = {
-  allow: "bg-green-100 text-green-800",
-  block: "bg-red-100 text-red-800",
-  escalate: "bg-amber-100 text-amber-800",
+const DECISION_BADGE: Record<Receipt["decision"], string> = {
+  allow: "badge-allow",
+  block: "badge-block",
+  escalate: "badge-escalate",
 };
 
 export default function ReceiptsPage() {
@@ -27,58 +27,63 @@ export default function ReceiptsPage() {
   }, []);
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-16">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-semibold">Every decision, proven</h1>
-        <button onClick={refresh} className="text-sm underline text-zinc-500">
+    <div className="max-w-3xl mx-auto px-6 py-16 sm:py-20">
+      <div className="flex items-center justify-between mb-3">
+        <p className="label-eyebrow">Audit trail</p>
+        <button onClick={refresh} className="btn btn-ghost text-xs">
           refresh
         </button>
       </div>
-      <p className="text-sm text-zinc-500 mb-8">
+      <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Every decision, proven</h1>
+      <p className="text-ink-muted max-w-xl leading-relaxed mb-10">
         Every time an agent tried to buy something, here&apos;s exactly what was checked and why
-        it was allowed, blocked, or sent for human review. Each row is cryptographically signed —
-        if anyone edits one afterward, the signature stops matching.
+        it was allowed, blocked, or sent for review. Each row is signed — if anyone edits one
+        afterward, the signature stops matching.
       </p>
 
-      {loading && <p className="text-sm text-zinc-400">Loading…</p>}
+      {loading && <p className="label-eyebrow">Loading…</p>}
       {!loading && receipts.length === 0 && (
-        <p className="text-sm text-zinc-400">
-          No orders yet.{" "}
-          <a href="/demo" className="underline">
-            Go try one
-          </a>
-          .
-        </p>
+        <div className="card p-10 text-center">
+          <p className="text-sm text-ink-muted">
+            No orders yet.{" "}
+            <a href="/demo" className="text-accent underline underline-offset-2">
+              Go try one
+            </a>
+            .
+          </p>
+        </div>
       )}
 
       <div className="space-y-3">
         {[...receipts].reverse().map((r) => (
-          <details key={r.cart_id} className="rounded-lg border border-zinc-200 bg-white p-4">
-            <summary className="cursor-pointer flex items-center justify-between">
-              <span className="flex items-center gap-3">
-                <span
-                  className={`text-xs font-semibold uppercase px-2 py-1 rounded ${DECISION_STYLE[r.decision]}`}
-                >
-                  {r.decision}
+          <details key={r.cart_id} className="card group overflow-hidden">
+            <summary className="cursor-pointer list-none px-6 py-4 flex items-center justify-between gap-4 hover:bg-paper-2/50 transition-colors">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className={`badge ${DECISION_BADGE[r.decision]}`}>{r.decision}</span>
+                <span className="text-sm truncate">
+                  {r.agent_id} <span className="text-ink-faint">·</span>{" "}
+                  <span className="mono-num">₹{(r.cart_total / 100).toFixed(2)}</span>
                 </span>
-                <span className="text-sm text-zinc-600">
-                  {r.agent_id} · Rs {(r.cart_total / 100).toFixed(2)}
-                </span>
-              </span>
-              <span className="text-xs text-zinc-400">
+              </div>
+              <span className="text-xs text-ink-faint shrink-0">
                 {new Date(r.timestamp).toLocaleString()}
               </span>
             </summary>
-            <div className="mt-3 space-y-1 border-t border-zinc-100 pt-3">
+            <div className="px-6 pb-5 pt-1 border-t border-border space-y-2.5">
               {r.rules_checked.map((rule) => (
-                <div key={rule.rule_name} className="text-sm flex gap-2">
-                  <span>{rule.passed ? "✅" : "❌"}</span>
-                  <span className="font-medium">{rule.rule_name}:</span>
-                  <span className="text-zinc-600">{rule.detail}</span>
+                <div key={rule.rule_name} className="flex items-start gap-2.5 text-sm pt-3">
+                  <span
+                    className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${rule.passed ? "bg-accent" : "bg-danger"}`}
+                  />
+                  <span>
+                    <span className="font-medium">{rule.rule_name}</span>
+                    <span className="text-ink-muted"> — {rule.detail}</span>
+                  </span>
                 </div>
               ))}
-              <div className="text-xs text-zinc-400 font-mono break-all pt-2">
-                signature: {r.signature}
+              <div className="pt-3">
+                <p className="label-eyebrow mb-1">Signature</p>
+                <p className="mono-num text-xs text-ink-faint break-all">{r.signature}</p>
               </div>
             </div>
           </details>

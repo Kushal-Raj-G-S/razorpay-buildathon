@@ -96,10 +96,20 @@ export type CartItemInput = {
 
 // ---------- Checkout (public -- this is what a shopping agent calls) ----------
 
-export function tryCheckout(merchantId: string, agentId: string, items: CartItemInput[]) {
-  return request<{ receipt: Receipt; payment?: Record<string, unknown> }>(`/checkout-sessions`, {
+export function tryCheckout(
+  merchantId: string,
+  agentId: string,
+  items: CartItemInput[],
+  paymentMode: "prepaid" | "cod" = "prepaid"
+) {
+  return request<{
+    receipt: Receipt;
+    payment?: Record<string, unknown>;
+    order?: Record<string, unknown>;
+    escalation_id?: number;
+  }>(`/checkout-sessions`, {
     method: "POST",
-    body: JSON.stringify({ merchant_id: merchantId, agent_id: agentId, items }),
+    body: JSON.stringify({ merchant_id: merchantId, agent_id: agentId, items, payment_mode: paymentMode }),
   });
 }
 

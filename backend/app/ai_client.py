@@ -21,7 +21,7 @@ load_dotenv()
 
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-MODEL = os.environ.get("NVIDIA_MODEL", "openai/gpt-oss-120b")
+MODEL = os.environ.get("NVIDIA_MODEL", "openai/gpt-oss-20b")
 
 
 def is_configured() -> bool:

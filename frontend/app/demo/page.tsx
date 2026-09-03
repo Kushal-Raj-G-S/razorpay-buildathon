@@ -18,48 +18,70 @@ const CLEAN_CART: CartItemInput[] = [
 
 const POISONED_CART: CartItemInput[] = [
   { id: "shirt", title: "Blue Cotton Shirt L", price: 45000, category: "clothing", quantity: 1 },
-  {
-    id: "giftcard",
-    title: "Rs 2000 Gift Card",
-    price: 200000,
-    category: "gift_card",
-    quantity: 1,
-  },
+  { id: "giftcard", title: "Rs 2000 Gift Card", price: 200000, category: "gift_card", quantity: 1 },
 ];
 
 const OVER_LIMIT_CART: CartItemInput[] = [
   { id: "jeans", title: "Denim Jeans 32", price: 1500000, category: "clothing", quantity: 1 },
 ];
 
-function ReceiptCard({ receipt }: { receipt: Receipt }) {
-  const color =
-    receipt.decision === "allow"
-      ? "border-green-300 bg-green-50"
-      : receipt.decision === "block"
-        ? "border-red-300 bg-red-50"
-        : "border-amber-300 bg-amber-50";
+const COD_CART: CartItemInput[] = [
+  { id: "socks", title: "Pack of Socks", price: 40000, category: "clothing", quantity: 1 },
+];
 
+const SCENARIOS: {
+  label: string;
+  sub: string;
+  cart: CartItemInput[];
+  mode: "prepaid" | "cod";
+}[] = [
+  { label: "Clean cart", sub: "Everything about it is fine", cart: CLEAN_CART, mode: "prepaid" },
+  {
+    label: "Poisoned cart",
+    sub: "A hidden gift card sneaked in",
+    cart: POISONED_CART,
+    mode: "prepaid",
+  },
+  { label: "Over the limit", sub: "One item, too expensive", cart: OVER_LIMIT_CART, mode: "prepaid" },
+  {
+    label: "Agentic COD",
+    sub: "Zero payment authorization needed",
+    cart: COD_CART,
+    mode: "cod",
+  },
+];
+
+const DECISION_BADGE: Record<Receipt["decision"], string> = {
+  allow: "badge-allow",
+  block: "badge-block",
+  escalate: "badge-escalate",
+};
+
+function ReceiptCard({ receipt }: { receipt: Receipt }) {
   return (
-    <div className={`rounded-lg border ${color} p-5 mt-6`}>
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-lg font-semibold uppercase tracking-wide">
+    <div className="card p-7 mt-8">
+      <div className="flex items-center justify-between mb-5">
+        <span className={`badge ${DECISION_BADGE[receipt.decision]} text-[0.78rem] px-3 py-1.5`}>
           {receipt.decision}
         </span>
-        <span className="text-sm text-zinc-500">
-          Rs {(receipt.cart_total / 100).toFixed(2)}
-        </span>
+        <span className="mono-num text-sm text-ink-muted">₹{(receipt.cart_total / 100).toFixed(2)}</span>
       </div>
-      <div className="space-y-1 mb-3">
+      <div className="space-y-2.5 mb-5">
         {receipt.rules_checked.map((r) => (
-          <div key={r.rule_name} className="text-sm flex gap-2">
-            <span>{r.passed ? "✅" : "❌"}</span>
-            <span className="font-medium">{r.rule_name}:</span>
-            <span className="text-zinc-600">{r.detail}</span>
+          <div key={r.rule_name} className="flex items-start gap-2.5 text-sm">
+            <span
+              className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${r.passed ? "bg-accent" : "bg-danger"}`}
+            />
+            <span>
+              <span className="font-medium">{r.rule_name}</span>
+              <span className="text-ink-muted"> — {r.detail}</span>
+            </span>
           </div>
         ))}
       </div>
-      <div className="text-xs text-zinc-400 font-mono break-all">
-        signature: {receipt.signature?.slice(0, 32)}…
+      <div className="pt-4 border-t border-border">
+        <p className="label-eyebrow mb-1">Signature</p>
+        <p className="mono-num text-xs text-ink-faint break-all">{receipt.signature}</p>
       </div>
     </div>
   );
@@ -67,21 +89,26 @@ function ReceiptCard({ receipt }: { receipt: Receipt }) {
 
 export default function DemoPage() {
   const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [extra, setExtra] = useState("");
   const [error, setError] = useState("");
   const [revoked, setRevoked] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
 
-  async function send(cart: CartItemInput[]) {
-    setLoading(true);
+  async function send(scenario: (typeof SCENARIOS)[number]) {
+    setLoading(scenario.label);
     setError("");
+    setExtra("");
     try {
-      const result = await tryCheckout(MERCHANT_ID, AGENT_ID, cart);
+      const result = await tryCheckout(MERCHANT_ID, AGENT_ID, scenario.cart, scenario.mode);
       setReceipt(result.receipt);
+      if (result.payment) setExtra(`Real Razorpay link created: ${result.payment.short_url}`);
+      if (result.order) setExtra("Order confirmed as Cash on Delivery — no payment link needed.");
+      if (result.escalation_id) setExtra(`Sent to the review queue as order #${result.escalation_id}.`);
     } catch (e) {
       setError((e as Error).message);
       setReceipt(null);
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   }
 
@@ -96,50 +123,48 @@ export default function DemoPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-16">
-      <h1 className="text-2xl font-semibold mb-2">Pretend you&apos;re an AI agent</h1>
-      <p className="text-sm text-zinc-500 mb-8">
-        Pick a cart below. This sends it to the backend exactly like a real shopping agent would,
-        and the bouncer decides in real time.{" "}
-        <a href="/policy" className="underline">
-          Make sure you&apos;ve saved rules first.
-        </a>
+    <div className="max-w-3xl mx-auto px-6 py-16 sm:py-20">
+      <p className="label-eyebrow mb-3">Live test</p>
+      <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Pretend you&apos;re an agent</h1>
+      <p className="text-ink-muted max-w-xl leading-relaxed mb-10">
+        Pick a scenario. It sends the cart to the real server exactly like a shopping agent
+        would, and the bouncer decides in real time. Make sure you&apos;ve{" "}
+        <a href="/policy" className="text-accent underline underline-offset-2">
+          saved rules
+        </a>{" "}
+        first.
       </p>
 
-      <div className="flex flex-wrap gap-3 mb-4">
-        <button
-          onClick={() => send(CLEAN_CART)}
-          disabled={loading}
-          className="rounded bg-white border border-zinc-300 px-4 py-2 text-sm hover:border-zinc-500"
-        >
-          Send a clean cart
-        </button>
-        <button
-          onClick={() => send(POISONED_CART)}
-          disabled={loading}
-          className="rounded bg-white border border-zinc-300 px-4 py-2 text-sm hover:border-zinc-500"
-        >
-          Send a poisoned cart (hidden gift card)
-        </button>
-        <button
-          onClick={() => send(OVER_LIMIT_CART)}
-          disabled={loading}
-          className="rounded bg-white border border-zinc-300 px-4 py-2 text-sm hover:border-zinc-500"
-        >
-          Send an over-limit cart
+      <div className="grid sm:grid-cols-2 gap-3">
+        {SCENARIOS.map((s) => (
+          <button
+            key={s.label}
+            onClick={() => send(s)}
+            disabled={loading !== null}
+            className="card p-5 text-left hover:border-accent transition-colors disabled:opacity-50"
+          >
+            <p className="text-sm font-medium mb-0.5">
+              {loading === s.label ? "Sending…" : s.label}
+            </p>
+            <p className="text-xs text-ink-muted">{s.sub}</p>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-6 flex items-center justify-between card px-5 py-4">
+        <div>
+          <p className="text-sm font-medium">Agent access</p>
+          <p className="text-xs text-ink-muted">
+            {revoked ? "Revoked — every request from this agent will be refused" : "Currently allowed to transact"}
+          </p>
+        </div>
+        <button onClick={toggleRevoke} className={`btn ${revoked ? "btn-secondary" : "btn-danger"}`}>
+          {revoked ? "Un-revoke agent" : "Revoke this agent"}
         </button>
       </div>
 
-      <button
-        onClick={toggleRevoke}
-        className={`rounded px-4 py-2 text-sm font-medium ${
-          revoked ? "bg-green-600 text-white" : "bg-red-600 text-white"
-        }`}
-      >
-        {revoked ? "Un-revoke this agent" : "Revoke this agent right now"}
-      </button>
-
-      {error && <p className="text-sm text-red-600 mt-4">{error}</p>}
+      {error && <p className="text-sm text-danger mt-6">{error}</p>}
+      {extra && <p className="text-sm text-ink-muted mt-6">{extra}</p>}
       {receipt && <ReceiptCard receipt={receipt} />}
     </div>
   );

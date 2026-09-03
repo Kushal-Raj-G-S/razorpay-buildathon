@@ -1,26 +1,275 @@
 @import "tailwindcss";
 
+/* ============================================================
+   WARRANT design system.
+
+   Concept: an official document, a ledger, a stamped authorization --
+   not a generic SaaS dashboard. Warm paper background, ink-dark text,
+   a deep ledger-green accent (never blue/purple), a serif display face
+   for anything that reads like a heading or a verdict, monospace for
+   every number and hash because this product's whole point is that
+   numbers and signatures must be exact and scannable.
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #faf8f3;
+  --paper-2: #f2ede1;
+  --surface: #ffffff;
+
+  --border: #e6dfcd;
+  --border-strong: #d8cdb0;
+
+  --ink: #1c1810;
+  --ink-muted: #6f6653;
+  --ink-faint: #a89d81;
+
+  --accent: #1f4b3f;
+  --accent-hover: #16382f;
+  --accent-soft: #e5efe9;
+  --accent-soft-border: #c7dcd0;
+
+  --danger: #922b21;
+  --danger-soft: #f7e7e2;
+  --danger-soft-border: #e6c4b8;
+
+  --warning: #a1660c;
+  --warning-soft: #f7edd9;
+  --warning-soft-border: #e8d4a4;
+
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 18px;
+
+  --shadow-sm: 0 1px 2px rgba(28, 24, 16, 0.05);
+  --shadow: 0 1px 3px rgba(28, 24, 16, 0.07), 0 4px 14px -6px rgba(28, 24, 16, 0.08);
+  --shadow-lg: 0 12px 32px -12px rgba(28, 24, 16, 0.22);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+
+  --font-display: var(--font-fraunces);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+  --radius-lg: var(--radius-lg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html {
+  background: var(--paper);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Subtle paper texture: a barely-there grain + a faint guilloché-style
+   dotted grid, like security paper on an official document. Doesn't
+   read at a glance, adds texture under scrutiny. */
+.paper-texture {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(28, 24, 16, 0.05) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+/* ============================================================
+   Component classes
+   ============================================================ */
+
+@layer components {
+  .display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.01em;
+  }
+
+  .label-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    font-size: 0.875rem;
+    border-radius: var(--radius);
+    padding: 0.6rem 1.1rem;
+    transition: all 150ms ease;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--paper);
+    box-shadow: var(--shadow-sm);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--accent-hover);
+    box-shadow: var(--shadow);
+    transform: translateY(-1px);
+  }
+
+  .btn-secondary {
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--border-strong);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .btn-danger {
+    background: var(--danger);
+    color: var(--paper);
+  }
+  .btn-danger:hover:not(:disabled) {
+    filter: brightness(0.92);
+  }
+
+  .btn-ghost {
+    color: var(--ink-muted);
+    padding: 0.4rem 0.6rem;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--ink);
+    background: var(--paper-2);
+  }
+
+  .field-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    padding: 0.55rem 0.75rem;
+    font-size: 0.9rem;
+    color: var(--ink);
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+  .field-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .field-input::placeholder {
+    color: var(--ink-faint);
+  }
+
+  .field-label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 0.35rem;
+  }
+
+  .field-hint {
+    font-size: 0.75rem;
+    color: var(--ink-muted);
+    margin-top: 0.35rem;
+    line-height: 1.4;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 0.28rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+
+  .badge-allow {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent-soft-border);
+  }
+  .badge-block {
+    background: var(--danger-soft);
+    color: var(--danger);
+    border-color: var(--danger-soft-border);
+  }
+  .badge-escalate {
+    background: var(--warning-soft);
+    color: var(--warning);
+    border-color: var(--warning-soft-border);
+  }
+  .badge-neutral {
+    background: var(--paper-2);
+    color: var(--ink-muted);
+    border-color: var(--border);
+  }
+
+  .mono-num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .nav-link {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--ink-muted);
+    padding: 0.4rem 0.1rem;
+    border-bottom: 2px solid transparent;
+    transition: color 150ms ease, border-color 150ms ease;
+  }
+  .nav-link:hover {
+    color: var(--ink);
+  }
+  .nav-link.active {
+    color: var(--ink);
+    border-color: var(--accent);
+  }
 }

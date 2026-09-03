@@ -28,8 +28,8 @@ export default function EscalationsPage() {
       const result = await reviewEscalation(id, approve, note[id]);
       setMessage(
         approve
-          ? `Approved. Real Razorpay payment link created: ${result.payment?.short_url ?? "n/a"}`
-          : "Rejected. No payment was created."
+          ? `Approved — real Razorpay payment link created: ${result.payment?.short_url ?? "n/a"}`
+          : "Rejected — no payment was created."
       );
       refresh();
     } catch (e) {
@@ -38,64 +38,66 @@ export default function EscalationsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-16">
-      <h1 className="text-2xl font-semibold mb-2">Orders waiting for you</h1>
-      <p className="text-sm text-zinc-500 mb-8">
-        Every rule passed on these, but they were too big to auto-approve. Nothing happens with
-        money until you decide. Approve creates a real Razorpay payment link right here.
+    <div className="max-w-3xl mx-auto px-6 py-16 sm:py-20">
+      <p className="label-eyebrow mb-3">Human review</p>
+      <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Orders waiting for you</h1>
+      <p className="text-ink-muted max-w-xl leading-relaxed mb-10">
+        Every rule passed on these — they were just too big to auto-approve. Nothing happens with
+        money until you decide. Approving creates a real Razorpay payment link right here.
       </p>
 
-      {loading && <p className="text-sm text-zinc-400">Loading…</p>}
-      {!loading && pending.length === 0 && (
-        <p className="text-sm text-zinc-400">
-          Nothing pending. Try an order between your escalate-above value and your max order
-          value on the{" "}
-          <a href="/demo" className="underline">
-            try it
-          </a>{" "}
-          page.
-        </p>
+      {message && (
+        <div className="card px-5 py-3.5 mb-6 text-sm bg-paper-2/60 break-all">{message}</div>
       )}
 
-      {message && (
-        <div className="mb-4 text-sm rounded border border-zinc-200 bg-zinc-50 p-3 break-all">
-          {message}
+      {loading && <p className="label-eyebrow">Loading…</p>}
+      {!loading && pending.length === 0 && (
+        <div className="card p-10 text-center">
+          <p className="text-sm text-ink-muted">
+            Nothing pending. Try an order between your escalate-above value and your max order
+            value on{" "}
+            <a href="/demo" className="text-accent underline underline-offset-2">
+              the try-it page
+            </a>
+            .
+          </p>
         </div>
       )}
 
       <div className="space-y-4">
         {pending.map((e) => (
-          <div key={e.id} className="rounded-lg border border-amber-300 bg-amber-50 p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="font-medium">Order #{e.id}</span>
-              <span className="text-sm text-zinc-600">Rs {(e.cart_total / 100).toFixed(2)}</span>
+          <div key={e.id} className="card overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-warning-soft/40">
+              <div className="flex items-center gap-3">
+                <span className="badge badge-escalate">Order #{e.id}</span>
+                <span className="text-sm text-ink-muted">agent: {e.agent_id}</span>
+              </div>
+              <span className="mono-num text-sm font-medium">₹{(e.cart_total / 100).toFixed(2)}</span>
             </div>
-            <div className="text-sm text-zinc-600 mb-3">agent: {e.agent_id}</div>
-            <ul className="text-sm mb-3 list-disc list-inside">
+
+            <div className="px-6 py-4 space-y-1.5">
               {e.cart_items.map((item, i) => (
-                <li key={i}>
-                  {item.title} × {item.quantity} — Rs {(item.price / 100).toFixed(2)}
-                </li>
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <span>
+                    {item.title} <span className="text-ink-faint">× {item.quantity}</span>
+                  </span>
+                  <span className="mono-num text-ink-muted">₹{(item.price / 100).toFixed(2)}</span>
+                </div>
               ))}
-            </ul>
-            <input
-              type="text"
-              placeholder="optional note"
-              className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm mb-3"
-              value={note[e.id] || ""}
-              onChange={(ev) => setNote({ ...note, [e.id]: ev.target.value })}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => decide(e.id, true)}
-                className="rounded bg-green-600 text-white px-4 py-1.5 text-sm font-medium"
-              >
+            </div>
+
+            <div className="px-6 pb-5 flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                placeholder="optional note"
+                className="field-input flex-1 min-w-[160px]"
+                value={note[e.id] || ""}
+                onChange={(ev) => setNote({ ...note, [e.id]: ev.target.value })}
+              />
+              <button onClick={() => decide(e.id, true)} className="btn btn-primary">
                 Approve
               </button>
-              <button
-                onClick={() => decide(e.id, false)}
-                className="rounded bg-red-600 text-white px-4 py-1.5 text-sm font-medium"
-              >
+              <button onClick={() => decide(e.id, false)} className="btn btn-danger">
                 Reject
               </button>
             </div>
