@@ -120,6 +120,14 @@ Backend health-gates the frontend (`depends_on: condition: service_healthy` in
 `docker-compose.yml`), so `frontend` won't even attempt to start until `backend` is
 actually answering requests, not just "container running."
 
+The Digest (`/digest`, `/digest/narrate`) was verified the same way after it was built:
+rebuilt both images, ran a real checkout inside the running backend container to trip the
+catalog-mismatch flag, confirmed `GET /digest` answers in ~1s and `POST /digest/narrate`
+completes with a real NVIDIA API response in ~20s (proving the container has outbound
+network access and the right key from `backend/.env`), and loaded the actual page in a
+browser pointed at the container's port 3000 to watch the numbers render immediately and
+the AI summary land a few seconds later, same as local dev.
+
 ---
 
 ## Known gaps — read this before assuming anything below isn't here for a reason
