@@ -87,9 +87,28 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 29 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 34 passing, no network dependency (Razorpay calls
 are stubbed in the test suite; the real integration is proven separately, live, in git
 history).
+
+## Running it with Docker
+
+```bash
+cp backend/.env.example backend/.env   # fill in real keys first
+docker compose up --build
+```
+
+That's both services, one command. Actually verified, not just written and assumed —
+`docker compose build` was run to completion, both containers started, a merchant was
+registered and a policy saved and a poisoned cart checked out **inside the running
+container** with the correct signed BLOCK receipt coming back, and the backend container
+was restarted mid-session to confirm the SQLite data in the named volume survives a
+restart rather than silently resetting. Frontend was checked by opening it in a real
+browser too, not just curling for a 200.
+
+Backend health-gates the frontend (`depends_on: condition: service_healthy` in
+`docker-compose.yml`), so `frontend` won't even attempt to start until `backend` is
+actually answering requests, not just "container running."
 
 ---
 
@@ -99,8 +118,10 @@ Built fast, tested hard, but not everything is closed. Listed here explicitly ra
 left for someone to discover, because a security/trust product that hides its own gaps is
 not one anyone should trust.
 
-**Not deployed anywhere permanent.** This runs locally — there is no live URL. Anyone
-evaluating it needs to run both servers themselves, per the instructions above.
+**Not deployed anywhere permanent.** Docker makes this trivially deployable — `docker
+compose up --build` is a working, verified one-command boot of both services — but nobody
+has actually pointed it at a real host yet. There is still no live URL. Anyone evaluating
+it needs to run it themselves, either directly or via Docker, per the instructions above.
 
 **No merchant self-service signup UI.** `POST /merchants/register` works and is tested,
 but there's no page for it — account creation happens via curl. A real product needs this
