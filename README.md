@@ -47,6 +47,33 @@ for how the build was scoped.
    pattern the way a large company might. Every flag has a real action next to it —
    Revoke, right there — not just a warning with nowhere to act on it.
 
+## Authenticating with your own Razorpay keys, not a second credential
+
+`POST /merchants/register` mints a Warrant-only API key — simple, but it's a second
+credential on top of whatever Razorpay keys a merchant already has, which is exactly the
+kind of friction a real Razorpay-integrated feature shouldn't add. `POST
+/merchants/register-with-razorpay` is the alternative: hand over your real Razorpay
+test-mode `key_id`/`key_secret`, Warrant calls Razorpay with them
+(`razorpay_client.verify_razorpay_credentials`, one cheap `GET /payment_links?count=1`) to
+confirm they're genuine — not just shaped like a key — and if Razorpay accepts them, those
+same keys become how you authenticate to Warrant from then on
+(`Authorization: Bearer <key_id>:<key_secret>`). No separate credential is ever minted.
+
+Verified live against real Razorpay test-mode keys, not just mocked: registering with the
+real pair succeeds and mints nothing extra; registering with a fabricated pair gets a 401
+because *Razorpay itself* rejects it, not a local format check; the real key pair then
+successfully authenticates an actual policy save. 5 additional tests stub the Razorpay call
+for the rest of the suite, the same way `create_payment_link` is already stubbed elsewhere.
+
+**The honest boundary, stated plainly**: this proves the caller possesses a genuine,
+working Razorpay key pair — it is not the same claim as a real OAuth/Partner-API
+integration, where Razorpay itself would vouch "this key belongs to merchant X." That
+requires Razorpay approving this as a partner application, which is out of reach for a
+buildathon build, so it wasn't faked. If this ever runs *inside* Razorpay's own
+infrastructure rather than as an external caller of their public API, this whole question
+mostly dissolves — their own session already knows who the merchant is, and this file is
+the seam that gets replaced, not the permanent answer.
+
 ## For integrators — this is a feature, not a SaaS with its own required frontend
 
 The Next.js dashboard in `frontend/` is a reference implementation, not the product. A
@@ -127,7 +154,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 50 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 55 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 

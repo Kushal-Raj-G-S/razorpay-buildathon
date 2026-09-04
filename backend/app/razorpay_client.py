@@ -20,6 +20,28 @@ def _configured() -> bool:
     return bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
 
 
+async def verify_razorpay_credentials(key_id: str, key_secret: str) -> bool:
+    """
+    Proves a merchant genuinely owns the Razorpay key pair they're
+    handing us, by actually calling Razorpay with it -- not just
+    checking it's shaped like a key. Used by the alternative
+    registration path (see main.py's register_merchant_with_razorpay):
+    instead of Warrant minting its own separate API key, a merchant's
+    real Razorpay test-mode credentials become their Warrant credential
+    directly. One cheap, read-only call (list payment links, page size
+    1) is enough -- Razorpay itself rejects the request with 401 if the
+    key pair is wrong, which is the only thing being checked here.
+
+    Returns True only on a genuine 200 from Razorpay. Any other status
+    (401/403 = wrong keys) returns False. A network failure raises,
+    since that's not the same thing as "these keys are invalid" and the
+    caller should surface it differently (503, not "bad credentials").
+    """
+    async with httpx.AsyncClient(auth=(key_id, key_secret), timeout=15) as client:
+        response = await client.get(f"{BASE_URL}/payment_links", params={"count": 1})
+        return response.status_code == 200
+
+
 async def create_payment_link(amount_paise: int, description: str, currency: str = "INR") -> dict:
     """
     Creates a Razorpay TEST payment link for an allowed order.

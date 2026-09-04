@@ -5,6 +5,8 @@ from an AI agent trying to shop, or from our own Next.js dashboard.
 Endpoints, in plain words:
   GET  /.well-known/ucp          -- "here's how to talk to this shop" (industry standard discovery)
   POST /merchants/register       -- a shop owner creates their account, gets a secret key ONCE
+  POST /merchants/register-with-razorpay -- same, but authenticates with the merchant's own
+                                             real Razorpay keys instead of a Warrant-only one
   POST /catalog                   -- upload a clean catalog directly           [merchant-only]
   POST /catalog/from-text         -- AI turns messy product text into a clean catalog [merchant-only]
   POST /catalog/search            -- "what do you sell?"                       [public -- agents need this]
@@ -59,6 +61,7 @@ not in-memory dictionaries that vanish on restart.
 """
 import json
 import time
+import httpx
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, HTTPException, Depends, Header
@@ -76,7 +79,7 @@ from app.engine.digest import compute_digest
 from app.models.digest import DigestResponse, DigestNarrateResponse
 from app.engine.signing import sign_receipt
 from app.engine.identity import verify_agent_signature
-from app.razorpay_client import create_payment_link
+from app.razorpay_client import create_payment_link, verify_razorpay_credentials
 from app import ai_client
 from app.auth import require_merchant_auth, generate_api_key, _hash_key
 from app.db.session import init_db, get_session
@@ -172,6 +175,61 @@ def register_merchant(req: MerchantRegisterRequest, session: Session = Depends(g
         "merchant_id": req.merchant_id,
         "api_key": api_key,
         "warning": "save this now -- it will never be shown again",
+    }
+
+
+class MerchantRegisterWithRazorpayRequest(BaseModel):
+    merchant_id: str
+    razorpay_key_id: str
+    razorpay_key_secret: str
+
+
+@app.post("/merchants/register-with-razorpay")
+async def register_merchant_with_razorpay(req: MerchantRegisterWithRazorpayRequest,
+                                           session: Session = Depends(get_session)):
+    """
+    The alternative to POST /merchants/register: instead of Warrant
+    minting its own separate API key -- a second credential on top of
+    whatever Razorpay keys a merchant already has, which is exactly the
+    kind of extra friction a real Razorpay-integrated feature shouldn't
+    add -- a merchant's own real Razorpay test-mode key_id/key_secret
+    becomes their Warrant credential directly.
+
+    We don't just check these are shaped like Razorpay keys: we call
+    Razorpay with them (see razorpay_client.verify_razorpay_credentials)
+    and only register if Razorpay itself accepts them. From then on,
+    `Authorization: Bearer <key_id>:<key_secret>` -- the same keys,
+    never anything Warrant generated -- authenticates every merchant
+    action, through the exact same require_merchant_auth check as the
+    other registration path; only the source of the secret differs, not
+    how it's verified.
+
+    Real limitation, stated plainly: this proves the caller possesses a
+    genuine, working Razorpay key pair, not that Razorpay has vouched
+    "this key belongs to merchant X" the way a real OAuth/Partner-API
+    integration would. That would require Razorpay approving this as a
+    partner application, which is out of reach for a buildathon build --
+    see README for the fuller explanation of this boundary.
+    """
+    if repo.merchant_exists(session, req.merchant_id):
+        raise HTTPException(409, "merchant already registered")
+
+    try:
+        verified = await verify_razorpay_credentials(req.razorpay_key_id, req.razorpay_key_secret)
+    except httpx.HTTPError as e:
+        raise HTTPException(503, f"could not reach Razorpay to verify these keys: {e}")
+
+    if not verified:
+        raise HTTPException(401, "Razorpay rejected this key_id/key_secret pair -- check they're correct")
+
+    credential = f"{req.razorpay_key_id}:{req.razorpay_key_secret}"
+    repo.create_merchant(session, req.merchant_id, _hash_key(credential))
+    return {
+        "merchant_id": req.merchant_id,
+        "note": "Verified with Razorpay. Authenticate as "
+                "'Authorization: Bearer <razorpay_key_id>:<razorpay_key_secret>' -- "
+                "the same keys you just gave us. Warrant never generated or stored a "
+                "separate credential for you.",
     }
 
 
