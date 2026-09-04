@@ -75,7 +75,7 @@ from app.models.catalog import (
 )
 from app.models.policy import Policy, PolicyHistoryEntry, PolicyDraftResponse
 from app.models.escalation import EscalationAdviceResponse, EscalationReviewResponse
-from app.models.receipt import Receipt
+from app.models.receipt import Receipt, ReceiptWithItems
 from app.models.checkout import CheckoutResponse
 from app.models.merchant import MerchantRegisterResponse, MerchantRegisterWithRazorpayResponse
 from app.models.common import StatusResponse, AgentActionResponse, AgentRegisterResponse, PublicKeyResponse
@@ -487,11 +487,11 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
 
 # ---------- Receipts (for the dashboard) ----------
 
-@app.get("/receipts", response_model=list[Receipt])
+@app.get("/receipts", response_model=list[ReceiptWithItems])
 def list_receipts_endpoint(merchant_id: str, session: Session = Depends(get_session),
                             authorization: str | None = Header(None)):
     _auth(merchant_id, session, authorization)
-    return repo.list_receipts(session, merchant_id)
+    return repo.list_receipts_with_items(session, merchant_id)
 
 
 @app.get("/digest", response_model=DigestResponse)

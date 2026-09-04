@@ -30,3 +30,26 @@ class Receipt(BaseModel):
 
     # filled in later once we sign it (step 4 from our chat)
     signature: str | None = None
+
+
+class ReceiptItem(BaseModel):
+    id: str
+    title: str
+    price: int
+    category: str | None = None
+    quantity: int
+    listed: bool = True
+
+
+class ReceiptWithItems(Receipt):
+    """
+    GET /receipts's real response shape -- Receipt itself deliberately
+    doesn't carry items (its shape is also what gets signed), but a
+    merchant looking at "what was actually allowed/blocked" needs the
+    real products, not just a total in rupees. A prior version declared
+    response_model=list[Receipt] on that route, which silently stripped
+    this field from every response even though repo.list_receipts_with_items
+    returned it -- found by clicking through the Digest page's own
+    "Allowed" drilldown and noticing the expand arrow never appeared.
+    """
+    cart_items: list[ReceiptItem] = []

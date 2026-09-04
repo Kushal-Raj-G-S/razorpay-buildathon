@@ -47,6 +47,29 @@ for how the build was scoped.
    pattern the way a large company might. Every flag has a real action next to it —
    Revoke, right there — not just a warning with nowhere to act on it.
 
+## The Digest drills down into real receipts, not just totals
+
+The four summary tiles (Attempts / Allowed / Blocked / Escalated) are clickable — clicking
+one shows the actual receipts behind that number (agent, amount, timestamp), and each row
+expands to show what was actually in the cart, not just a total in rupees. The agent table
+moved to its own column, paginated 10 at a time, since it grows unbounded with every new
+agent that's ever shown up.
+
+Two real things came out of building this. First: a genuine `response_model=list[Receipt]`
+bug on `GET /receipts` — `repo.list_receipts_with_items` genuinely returned `cart_items`,
+but that response model silently stripped it on the way out, since `cart_items` isn't a
+field on `Receipt` (whose shape is also what gets signed, so it deliberately excludes it).
+Found by clicking the new "Allowed" drilldown and noticing the expand arrow never appeared
+— not by reading the code. Fixed with a proper `ReceiptWithItems` model
+(`models/receipt.py`) instead of removing the response_model entirely, so `/docs` still
+describes the real shape. New regression test asserts on the actual HTTP response, not the
+ORM return value, specifically because that's the layer the bug lived in.
+
+Second, separately: on real demo history, `Allowed` sat at 0 in every window before this —
+correctly flagged as too thin a claim ("does this system ever actually let anything
+through?"). Three genuine, correctly-signed, identity-verified checkouts now exist in the
+history for exactly this reason, not fabricated data.
+
 ## Authenticating with your own Razorpay keys, not a second credential
 
 `POST /merchants/register` mints a Warrant-only API key — simple, but it's a second
@@ -166,7 +189,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 58 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 59 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 

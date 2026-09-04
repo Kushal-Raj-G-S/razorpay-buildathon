@@ -200,6 +200,29 @@ def list_receipts(session: Session, merchant_id: str | None = None) -> list[Rece
     return [_row_to_receipt(r) for r in session.exec(stmt).all()]
 
 
+def list_receipts_with_items(session: Session, merchant_id: str) -> list[dict]:
+    """
+    Same rows as list_receipts(), plus the cart_items snapshot -- Receipt
+    itself deliberately doesn't carry items (see models/receipt.py), but
+    a merchant looking at "what was actually allowed" needs to see the
+    real products, not just a total in rupees. Returned as plain dicts,
+    not Receipt objects, since Receipt's shape is also what gets signed
+    and verified -- this stays a display-only superset, not a change to
+    that contract.
+    """
+    stmt = (
+        select(ReceiptRow)
+        .where(ReceiptRow.merchant_id == merchant_id)
+        .order_by(ReceiptRow.id)
+    )
+    rows = session.exec(stmt).all()
+    result = []
+    for r in rows:
+        receipt = _row_to_receipt(r)
+        result.append({**receipt.model_dump(mode="json"), "cart_items": r.cart_items})
+    return result
+
+
 def count_recent_orders(session: Session, merchant_id: str, agent_id: str, window_minutes: int) -> int:
     """
     How many times has this agent tried to check out with this merchant

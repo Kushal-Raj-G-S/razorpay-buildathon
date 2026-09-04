@@ -12,6 +12,15 @@ export type RuleResult = {
   detail: string;
 };
 
+export type ReceiptCartItem = {
+  id: string;
+  title: string;
+  price: number;
+  category: string | null;
+  quantity: number;
+  listed?: boolean;
+};
+
 export type Receipt = {
   cart_id: string;
   merchant_id: string;
@@ -21,6 +30,10 @@ export type Receipt = {
   cart_total: number;
   timestamp: string;
   signature: string | null;
+  // What was actually in the cart -- "what did this agent buy" was
+  // previously invisible past the total in rupees. Always present from
+  // GET /receipts (list_receipts_with_items); absent nowhere it's used.
+  cart_items?: ReceiptCartItem[];
 };
 
 export type Policy = {
