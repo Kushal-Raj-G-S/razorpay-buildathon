@@ -47,6 +47,32 @@ for how the build was scoped.
    pattern the way a large company might. Every flag has a real action next to it —
    Revoke, right there — not just a warning with nowhere to act on it.
 
+## For integrators — this is a feature, not a SaaS with its own required frontend
+
+The Next.js dashboard in `frontend/` is a reference implementation, not the product. A
+merchant using this through Razorpay would see it inside Razorpay's own dashboard, not ours
+— so the real deliverable is the API, and it has to be usable without reading `main.py`'s
+source to know what a response looks like.
+
+`GET /digest`, `POST /digest/narrate`, `GET /policy/{merchant_id}/history`, and
+`GET /escalations/{id}/advice` — the four routes an outside admin panel would most want to
+render directly — now declare a typed Pydantic `response_model`
+(`backend/app/models/digest.py`, the additions to `models/policy.py` and
+`models/escalation.py`), so `GET /docs` (Swagger UI) and `GET /openapi.json` describe their
+real shape: named, browsable, expandable schemas (`DigestResponse`, `DigestStats`,
+`AgentFootprint`, `PolicyHistoryEntry`, `EscalationAdviceResponse`, …), not "some JSON
+object." Verified live: hit `/openapi.json` directly and confirmed each of those four routes
+resolves to a real `$ref`, then reloaded the actual frontend against the now-typed backend
+and confirmed nothing broke — the shapes were already correct, this just makes FastAPI
+publish and enforce them.
+
+**Not done yet**: the rest of the routes (`/receipts`, `/escalations`, `/red-team/runs`,
+`/checkout-sessions`, catalog and merchant endpoints) still return plain dicts or
+SQLModel rows with no declared `response_model`, so their `/docs` entries are accurate for
+the request side but vague on the response side. Same fix, same pattern, just not applied
+everywhere yet — this was scoped to the four most Digest-adjacent, most-likely-to-be-
+rendered-elsewhere routes first.
+
 ## Why no AI in the decision path
 
 NIST measured agent-hijacking success rising from **11% to 81%** once an attack is

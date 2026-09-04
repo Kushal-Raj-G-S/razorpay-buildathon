@@ -68,10 +68,12 @@ from sqlmodel import Session
 
 from app.models.cart import Cart, CartItem
 from app.models.catalog import Catalog, Product, Variant
-from app.models.policy import Policy
+from app.models.policy import Policy, PolicyHistoryEntry
+from app.models.escalation import EscalationAdviceResponse
 from app.models.receipt import Receipt
 from app.engine.evaluate import evaluate
 from app.engine.digest import compute_digest
+from app.models.digest import DigestResponse, DigestNarrateResponse
 from app.engine.signing import sign_receipt
 from app.engine.identity import verify_agent_signature
 from app.razorpay_client import create_payment_link
@@ -283,7 +285,7 @@ def get_policy_endpoint(merchant_id: str, session: Session = Depends(get_session
     return policy
 
 
-@app.get("/policy/{merchant_id}/history")
+@app.get("/policy/{merchant_id}/history", response_model=list[PolicyHistoryEntry])
 def get_policy_history_endpoint(merchant_id: str, session: Session = Depends(get_session),
                                  authorization: str | None = Header(None)):
     """
@@ -411,7 +413,7 @@ def list_receipts_endpoint(merchant_id: str, session: Session = Depends(get_sess
     return repo.list_receipts(session, merchant_id)
 
 
-@app.get("/digest")
+@app.get("/digest", response_model=DigestResponse)
 def get_digest(merchant_id: str, window_hours: int = 168, session: Session = Depends(get_session),
                 authorization: str | None = Header(None)):
     """
@@ -427,6 +429,13 @@ def get_digest(merchant_id: str, window_hours: int = 168, session: Session = Dep
     page on).
 
     window_hours defaults to 168 (one week).
+
+    `response_model=DigestResponse` -- this is one of the routes an
+    outside admin panel would actually want to render directly (see
+    models/digest.py's docstring): declaring the shape here is what
+    makes /docs and /openapi.json describe it accurately instead of
+    just "some JSON object", the same way the internal frontend has
+    always had to just guess the shape from main.py's source.
     """
     _auth(merchant_id, session, authorization)
 
@@ -462,7 +471,7 @@ class DigestNarrateRequest(BaseModel):
     stats: dict
 
 
-@app.post("/digest/narrate")
+@app.post("/digest/narrate", response_model=DigestNarrateResponse)
 async def narrate_digest(req: DigestNarrateRequest, session: Session = Depends(get_session),
                           authorization: str | None = Header(None)):
     """
@@ -499,7 +508,7 @@ def list_escalations_endpoint(merchant_id: str, status: str = "pending",
     return repo.list_escalations(session, merchant_id, status)
 
 
-@app.get("/escalations/{escalation_id}/advice")
+@app.get("/escalations/{escalation_id}/advice", response_model=EscalationAdviceResponse)
 async def advise_on_escalation_endpoint(escalation_id: int, session: Session = Depends(get_session),
                                          authorization: str | None = Header(None)):
     """

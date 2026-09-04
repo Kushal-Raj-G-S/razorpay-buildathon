@@ -4,6 +4,7 @@ not code. We turn it into this shape (by hand for now, later maybe
 an AI helps translate their English into this).
 """
 from pydantic import BaseModel
+from datetime import datetime
 
 
 class Policy(BaseModel):
@@ -34,3 +35,13 @@ class Policy(BaseModel):
     # one agent may place in a rolling time window.
     max_orders_per_agent_per_window: int | None = None
     velocity_window_minutes: int = 60
+
+
+class PolicyHistoryEntry(BaseModel):
+    """One row from GET /policy/{merchant_id}/history -- see db/models.py's
+    PolicyHistoryRow. Typed here (rather than the endpoint just returning
+    repo's raw dicts) so an outside admin panel gets a real schema at
+    /docs instead of "some object shaped like a policy plus a timestamp"."""
+    id: int
+    saved_at: datetime
+    policy: Policy
