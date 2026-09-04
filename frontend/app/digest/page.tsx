@@ -251,6 +251,17 @@ export default function DigestPage() {
               ))}
             </div>
 
+            {revokeError && (
+              <div className="card px-5 py-3.5 text-sm bg-danger-soft text-danger">{revokeError}</div>
+            )}
+
+            {!selectedDecision && (
+              <p className="text-sm text-ink-faint">
+                Click a number above — Allowed shows what agents actually bought, Blocked shows
+                what they tried and why it was caught, Escalated shows what's waiting on you.
+              </p>
+            )}
+
             <AnimatePresence>
               {selectedDecision && (
                 <motion.div
@@ -272,6 +283,45 @@ export default function DigestPage() {
                         close
                       </button>
                     </div>
+
+                    {/* Flags live here, not as a separate always-visible section --
+                        they're all about blocked-pattern agents, so they belong inside
+                        the "why was this blocked" drilldown, not duplicated next to it. */}
+                    {selectedDecision === "block" && stats.flags.length > 0 && (
+                      <div className="px-5 py-4 border-b border-border bg-paper-2/30 space-y-3">
+                        <p className="label-eyebrow">Patterns worth noticing ({stats.flags.length})</p>
+                        {stats.flags.map((f) => {
+                          const agent = stats.agents.find((a) => a.agent_id === f.agent_id);
+                          const isRevoked = agent?.revoked ?? false;
+                          return (
+                            <div key={`${f.agent_id}-${f.flag_type}`} className="card p-4">
+                              <div className="flex items-center gap-3 mb-1.5">
+                                <span className={`badge ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
+                                <span className="text-sm font-medium">
+                                  {FLAG_LABEL[f.flag_type] ?? f.flag_type}
+                                </span>
+                                <span className="text-xs text-ink-faint ml-auto">agent: {f.agent_id}</span>
+                              </div>
+                              <p className="text-sm text-ink-muted mb-2.5">
+                                {explanationFor(f.agent_id) ?? f.detail}
+                              </p>
+                              {isRevoked ? (
+                                <span className="badge badge-neutral text-xs">Access revoked</span>
+                              ) : (
+                                <button
+                                  onClick={() => toggleRevoke(f.agent_id, false)}
+                                  disabled={revokeBusy === f.agent_id}
+                                  className="btn btn-danger text-xs px-3.5 py-1.5"
+                                >
+                                  {revokeBusy === f.agent_id ? "Revoking…" : `Revoke ${f.agent_id}`}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {receiptsLoading && <p className="text-sm text-ink-muted p-5">Loading…</p>}
                     {receiptsError && (
                       <p className="text-sm text-danger p-5">Couldn't load receipts: {receiptsError}</p>
@@ -284,12 +334,14 @@ export default function DigestPage() {
                         {filteredReceipts.map((r) => {
                           const isOpen = expandedReceipt === r.cart_id;
                           const hasItems = (r.cart_items?.length ?? 0) > 0;
+                          const failedRules = r.rules_checked.filter((rc) => !rc.passed);
+                          const canExpand = hasItems || failedRules.length > 0;
                           return (
                             <div key={r.cart_id}>
                               <button
-                                onClick={() => hasItems && setExpandedReceipt(isOpen ? null : r.cart_id)}
+                                onClick={() => canExpand && setExpandedReceipt(isOpen ? null : r.cart_id)}
                                 className={`w-full px-5 py-3 flex items-center justify-between text-sm text-left ${
-                                  hasItems ? "hover:bg-paper-2/40" : ""
+                                  canExpand ? "hover:bg-paper-2/40" : ""
                                 }`}
                               >
                                 <div className="flex items-center gap-3">
@@ -305,7 +357,7 @@ export default function DigestPage() {
                                   <span className="text-xs text-ink-faint">
                                     {new Date(r.timestamp).toLocaleString()}
                                   </span>
-                                  {hasItems && (
+                                  {canExpand && (
                                     <span
                                       className={`text-ink-faint transition-transform ${isOpen ? "rotate-180" : ""}`}
                                     >
@@ -315,31 +367,50 @@ export default function DigestPage() {
                                 </div>
                               </button>
                               <AnimatePresence>
-                                {isOpen && hasItems && (
+                                {isOpen && canExpand && (
                                   <motion.div
                                     initial={{ opacity: 0, height: 0 }}
                                     animate={{ opacity: 1, height: "auto" }}
                                     exit={{ opacity: 0, height: 0 }}
                                     className="overflow-hidden bg-paper-2/30"
                                   >
-                                    <div className="px-5 pb-3 pt-1 space-y-1.5">
-                                      {r.cart_items!.map((item, i) => (
-                                        <div
-                                          key={`${item.id}-${i}`}
-                                          className="flex items-center justify-between text-xs text-ink-muted"
-                                        >
-                                          <span>
-                                            {item.title}
-                                            {item.category && (
-                                              <span className="badge badge-neutral text-[10px] ml-2 px-1.5 py-0">
-                                                {item.category}
+                                    <div className="px-5 pb-3 pt-1 space-y-2.5">
+                                      {hasItems && (
+                                        <div className="space-y-1.5">
+                                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                                            What was requested
+                                          </p>
+                                          {r.cart_items!.map((item, i) => (
+                                            <div
+                                              key={`${item.id}-${i}`}
+                                              className="flex items-center justify-between text-xs text-ink-muted"
+                                            >
+                                              <span>
+                                                {item.title}
+                                                {item.category && (
+                                                  <span className="badge badge-neutral text-[10px] ml-2 px-1.5 py-0">
+                                                    {item.category}
+                                                  </span>
+                                                )}
+                                                <span className="text-ink-faint"> × {item.quantity}</span>
                                               </span>
-                                            )}
-                                            <span className="text-ink-faint"> × {item.quantity}</span>
-                                          </span>
-                                          <span className="mono-num">₹{(item.price / 100).toFixed(2)}</span>
+                                              <span className="mono-num">₹{(item.price / 100).toFixed(2)}</span>
+                                            </div>
+                                          ))}
                                         </div>
-                                      ))}
+                                      )}
+                                      {failedRules.length > 0 && (
+                                        <div className="space-y-1">
+                                          <p className="text-[10px] uppercase tracking-wide text-ink-faint">
+                                            Why it was {r.decision === "block" ? "blocked" : "flagged"}
+                                          </p>
+                                          {failedRules.map((rc) => (
+                                            <p key={rc.rule_name} className="text-xs text-danger">
+                                              <span className="font-medium">{rc.rule_name}:</span> {rc.detail}
+                                            </p>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   </motion.div>
                                 )}
@@ -353,56 +424,6 @@ export default function DigestPage() {
                 </motion.div>
               )}
             </AnimatePresence>
-
-            <div>
-              <h2 className="label-eyebrow mb-3">
-                Flags {stats.flags.length > 0 && `(${stats.flags.length})`}
-              </h2>
-              {revokeError && (
-                <div className="card px-5 py-3.5 mb-3 text-sm bg-danger-soft text-danger">
-                  {revokeError}
-                </div>
-              )}
-              {stats.flags.length === 0 ? (
-                <p className="text-sm text-ink-muted">Nothing flagged in this window.</p>
-              ) : (
-                <div className="space-y-3">
-                  {stats.flags.map((f, i) => {
-                    const agent = stats.agents.find((a) => a.agent_id === f.agent_id);
-                    const isRevoked = agent?.revoked ?? false;
-                    return (
-                      <motion.div
-                        key={`${f.agent_id}-${f.flag_type}`}
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.05 }}
-                        className="card p-5"
-                      >
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className={`badge ${SEVERITY_STYLE[f.severity]}`}>{f.severity}</span>
-                          <span className="text-sm font-medium">{FLAG_LABEL[f.flag_type] ?? f.flag_type}</span>
-                          <span className="text-xs text-ink-faint ml-auto">agent: {f.agent_id}</span>
-                        </div>
-                        <p className="text-sm text-ink-muted mb-3">
-                          {explanationFor(f.agent_id) ?? f.detail}
-                        </p>
-                        {isRevoked ? (
-                          <span className="badge badge-neutral text-xs">Access revoked</span>
-                        ) : (
-                          <button
-                            onClick={() => toggleRevoke(f.agent_id, false)}
-                            disabled={revokeBusy === f.agent_id}
-                            className="btn btn-danger text-xs px-3.5 py-1.5"
-                          >
-                            {revokeBusy === f.agent_id ? "Revoking…" : `Revoke ${f.agent_id}`}
-                          </button>
-                        )}
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="lg:sticky lg:top-8">
