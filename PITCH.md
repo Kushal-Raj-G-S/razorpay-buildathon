@@ -186,3 +186,71 @@ the research, any of which will probably actually bite you:
 | Public production agent purchase-error rate | **doesn't exist** |
 | Agentic chargeback reason codes at Visa/Mastercard | **zero** |
 | Reserve Pay block cap / validity | **₹10,000 / 90 days** |
+
+---
+
+## Feature log — everything built after this script was written
+
+The script and form answers above were written early (commit `cfa5fac`) and describe four
+things: catalog cleanup, rule evaluation, signed receipts, revocation. A lot has been built
+since. This section exists so neither of us has to remember it from scratch when the
+script gets refreshed — pull from here, don't re-derive it. Keep this updated as things
+land; it's a reference list, not something to read aloud.
+
+### Unique, differentiating features (in build order)
+
+- **MCP server** (`b895e75`) — the whole decision engine exposed as MCP tools, the same
+  protocol Razorpay's own Agent Studio (Claude Agent SDK) uses to call tools. The actual
+  integration path, not just a REST API.
+- **Red-team** (`203a515`, extended `0aa592e`) — a merchant can send a real autonomous AI
+  at their own rules and get back a full, unscripted transcript of what it tried and why it
+  failed. Every run persisted; past runs browsable and expandable in the UI, not just the
+  one you just triggered.
+- **Digest** (`18ae2e2`, extended `0aa592e`) — a per-agent footprint (attempts, blocked,
+  which rule caught them, first/last seen) and a small set of deterministic flags (catalog
+  mismatch, velocity cap hit, repeated blocks) — all fixed code, zero AI, same rule as
+  checkout itself. AI only narrates already-decided flags in plain language, in a separate
+  call so real numbers render before the slow AI step finishes. Every flag has a Revoke
+  button right there — awareness with an action next to it, not a dead-end warning.
+- **Escalation Advisor** (`fdd4f88`) — AI drafts an approve/reject recommendation with a
+  confidence level for a human reviewing a large order; never decides anything itself.
+- **Policy version history** (`595d31c`) — every save snapshotted, browsable in a sidebar,
+  reloadable into the form — never auto-applied, still goes through the same
+  review-then-Save path as any other change.
+- **Razorpay-key auth** (`b0d3b60`) — a merchant's own real Razorpay test-mode keys become
+  their Warrant credential directly, verified with a real live call to Razorpay, not a
+  format check. No second, Warrant-only credential is ever minted.
+- **Typed, self-describing API** (`cc4be35`) — the four endpoints an outside admin panel
+  (i.e. Razorpay's own dashboard, not ours) would most want to render directly now publish
+  real OpenAPI schemas at `/docs`, not "some JSON object." This is the argument that the
+  Next.js dashboard is a reference implementation, not the product.
+- **COD governance + velocity limiting** (`afc9694`) — the India-specific gap no protocol
+  (AP2, ACP, UCP, even UPI Reserve Pay) covers: agentic Cash on Delivery needs zero payment
+  authorization, and order *frequency* matters as much as order size.
+- **Docker, verified twice for real** (`fdd4f88`/`adca20e`, `2992606`) — one-command boot of
+  both services, containers actually built and run (not just written), including a restart
+  to prove SQLite data survives.
+
+### Real bugs found and fixed — this is itself pitch material
+
+Evidence that "tested hard" isn't a claim, it's a log. Worth a line in the pitch precisely
+*because* they were found, not despite it:
+
+- **Catalog category-spoofing** (`203a515`) — an agent could relabel a real item's category
+  to dodge `deny_categories`; closed by resolving every item against the merchant's real
+  catalog before any rule runs, unconditionally blocking anything that doesn't match.
+- **Negative-quantity exploit** (`68407b1`) — a negative cart quantity produced a negative
+  total that trivially passed every value-based rule.
+- **Escalation double-approval** (`68407b1`) — double-clicking Approve could create two real
+  Razorpay payment links for one order.
+- **Payment-committed-before-Razorpay-succeeded ordering bug** (`fdd4f88`) — a failed
+  Razorpay call used to leave an escalation permanently stuck "approved" with no payment and
+  no way to retry.
+- **Revoke silently no-op'd for any never-registered agent** (`0aa592e`) — the button said
+  "revoked" and returned 200 OK; the agent could still check out immediately afterward.
+- **Policy AI-drafter silently dropped COD and velocity instructions** (`da88d08`) — schema
+  and prompt drifted apart after India-specific fields were added; now guarded by a static
+  test that fails if it happens again.
+
+Every one of these was found by actually trying to break the thing, not by reading the code
+and assuming it worked — several were found live, in a running browser, not in a test file.
