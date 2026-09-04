@@ -47,6 +47,32 @@ for how the build was scoped.
    pattern the way a large company might. Every flag has a real action next to it —
    Revoke, right there — not just a warning with nowhere to act on it.
 
+## Escalations: a real fraud false-positive found and fixed, plus history
+
+Auditing the Review queue the same way the Digest was audited turned up a genuine problem
+in the AI advisor, not just UI polish: `advise_on_escalation` embedded `cart_items` with
+prices still in paise while the order total had already been converted to rupees, so a
+Rs 5,000 order's item showed as `"price": 500000` right next to `"Order total: Rs 5000"` in
+the prompt. Live, this produced `"recommendation": "reject", "confidence": "high",
+"reasoning": "item price does not match order total... looks like a fraud attempt"` — a
+false fraud signal on a completely ordinary order, caused entirely by a units bug the
+merchant would have had no way to catch, since the AI states it with confidence. Fixed by
+converting every item's price to rupees before it reaches the prompt
+(`backend/app/ai_client.py`), verified against a real NVIDIA call afterward: the false
+mismatch claim is gone, and the advisor's reasoning now only cites facts actually present in
+the data.
+
+Two more real gaps closed in the same pass: the raw Razorpay payment link on approval was
+unclickable plain text; and the page only ever showed *pending* escalations — approve or
+reject one and it vanished with no record anywhere in the app (the original receipt still
+just says "escalate" forever, since reviewing one only updates the escalation row, never the
+receipt). A **Reviewed** tab now shows every past decision — status, items, your own note,
+when — reusing a backend capability (`status=""` returns every status) that already existed
+and just wasn't exposed. Also fixed at the source, not just on this page: every API error
+across the whole app was showing a raw, unparsed JSON blob (`Failed: 503:
+{"detail":"..."}`) — `lib/api.ts`'s `request()` now unwraps FastAPI's `{"detail": "..."}`
+shape into a plain message, benefiting every page that surfaces an error, not just this one.
+
 ## The Digest drills down into real receipts, not just totals
 
 The four summary tiles (Attempts / Allowed / Blocked / Escalated) are clickable — clicking
@@ -189,7 +215,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 59 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 60 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 

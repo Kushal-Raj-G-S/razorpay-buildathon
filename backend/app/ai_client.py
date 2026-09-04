@@ -192,9 +192,25 @@ async def advise_on_escalation(cart_items: list[dict], cart_total_rupees: float,
     which is the only place a decision actually becomes real, and it
     only ever accepts a decision from the human clicking a button, never
     from this function's output directly.
+
+    Real bug found live: `cart_items` comes in with prices in paise
+    (the DB's native unit) while `cart_total_rupees` is already
+    converted -- a Rs 5,000 order's item showed as "price: 500000" right
+    next to "Order total: Rs 5000" in the prompt. The model reasonably
+    read that as a mismatch and called it fraud: a false "reject, high
+    confidence" on a completely ordinary order, caused entirely by a
+    units bug, not by anything the agent actually did. Converted here so
+    every price the model sees is in the same unit as the total.
     """
+    items_in_rupees = [
+        {**item, "price_rupees": round(item["price"] / 100, 2)} if "price" in item else item
+        for item in cart_items
+    ]
+    for item in items_in_rupees:
+        item.pop("price", None)
+
     user_prompt = f"""Order total: Rs {cart_total_rupees:.0f}
-Items: {cart_items}
+Items (prices in rupees, matching the order total's unit): {items_in_rupees}
 Agent: {agent_id}
 This agent's recent order history with this merchant: {recent_agent_history or "no prior orders"}
 

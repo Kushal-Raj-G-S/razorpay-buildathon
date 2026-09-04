@@ -67,8 +67,21 @@ async function request<T>(path: string, options?: RequestInit, authed = false): 
     headers: { ...headers, ...(options?.headers || {}) },
   });
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${res.status}: ${body}`);
+    // FastAPI error bodies are JSON like {"detail": "..."} -- every error
+    // across the whole app used to show that raw, braces and all
+    // ("Failed: 503: {\"detail\":\"...\"}"), which is exactly what a
+    // merchant saw live when a real Razorpay 429 hit the escalation
+    // review endpoint. Unwrap it when it parses; fall back to the raw
+    // text untouched otherwise, since not every error body is JSON.
+    const bodyText = await res.text();
+    let detail = bodyText;
+    try {
+      const parsed = JSON.parse(bodyText);
+      if (parsed && typeof parsed.detail === "string") detail = parsed.detail;
+    } catch {
+      // not JSON -- use the raw text as-is
+    }
+    throw new Error(`${res.status}: ${detail}`);
   }
   return res.json();
 }
