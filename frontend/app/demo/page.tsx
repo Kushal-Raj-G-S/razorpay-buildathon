@@ -40,20 +40,35 @@ const COD_CART: CartItemInput[] = [
 const SCENARIOS: {
   label: string;
   sub: string;
+  expect: "ALLOW" | "BLOCK";
   cart: CartItemInput[];
   mode: "prepaid" | "cod";
 }[] = [
-  { label: "Clean cart", sub: "A vegetable pack, everything about it is fine", cart: CLEAN_CART, mode: "prepaid" },
+  {
+    label: "Clean cart",
+    sub: "\"Clean\" = a normal, legitimate order — not \"empty the cart.\" Just a real vegetable pack, nothing wrong with it.",
+    expect: "ALLOW",
+    cart: CLEAN_CART,
+    mode: "prepaid",
+  },
   {
     label: "Poisoned cart",
-    sub: "A denied-category meat item sneaked in",
+    sub: "A real vegetable item, plus a denied-category meat item quietly added alongside it — like an attacker slipping an extra item into an agent's cart.",
+    expect: "BLOCK",
     cart: POISONED_CART,
     mode: "prepaid",
   },
-  { label: "Over the limit", sub: "Real fish item, but too much of it", cart: OVER_LIMIT_CART, mode: "prepaid" },
+  {
+    label: "Over the limit",
+    sub: "One perfectly allowed real fish item — just 6 of it, enough to push the order total past this merchant's spending cap.",
+    expect: "BLOCK",
+    cart: OVER_LIMIT_CART,
+    mode: "prepaid",
+  },
   {
     label: "Agentic COD",
-    sub: "Zero payment authorization needed",
+    sub: "An agent checking out with Cash on Delivery — no upfront payment authorization at all, only allowed because this merchant explicitly opted in.",
+    expect: "ALLOW",
     cart: COD_CART,
     mode: "cod",
   },
@@ -177,9 +192,14 @@ export default function DemoPage() {
             transition={{ delay: i * 0.05, duration: 0.35 }}
             className="card p-5 text-left hover:border-accent transition-colors disabled:opacity-50"
           >
-            <p className="text-sm font-medium mb-0.5">
-              {loading === s.label ? "Sending…" : s.label}
-            </p>
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p className="text-sm font-medium">
+                {loading === s.label ? "Sending…" : s.label}
+              </p>
+              <span className={`badge ${DECISION_BADGE[s.expect === "ALLOW" ? "allow" : "block"]} text-[0.68rem] px-2 py-0.5 shrink-0`}>
+                expect {s.expect}
+              </span>
+            </div>
             <p className="text-xs text-ink-muted">{s.sub}</p>
           </motion.button>
         ))}
