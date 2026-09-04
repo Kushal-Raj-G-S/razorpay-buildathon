@@ -64,9 +64,18 @@ def compute_digest(receipts: list[dict], escalation_count: int, window_hours: in
                 "agent_id": agent_id,
                 "flag_type": "catalog_mismatch",
                 "count": catalog_mismatches,
-                "detail": f"tried to check out {catalog_mismatches} item(s) that didn't match anything in "
-                          f"your real catalog -- the exact pattern of an agent trying to disguise what it's "
-                          f"actually buying",
+                # Deliberately NOT "trying to disguise what it's buying" --
+                # an unlisted item id is equally consistent with a stale
+                # product reference, a bug in the agent, or genuine
+                # deception, and this file has no way to tell which. State
+                # the fact, name what it could mean, and stop there -- the
+                # same standard the rest of this project holds AI to
+                # (never assert what isn't verified) should hold for this
+                # file's own wording too.
+                "detail": f"tried to check out {catalog_mismatches} item(s) that don't match anything in "
+                          f"your real catalog. This could be a mistake (a stale or wrong product id) or an "
+                          f"attempt to misrepresent what's actually being bought -- this fact alone doesn't "
+                          f"say which. Worth a look.",
             })
 
         velocity_hits = a["blocked_rules"].get("velocity", 0)
@@ -81,12 +90,20 @@ def compute_digest(receipts: list[dict], escalation_count: int, window_hours: in
             })
 
         if a["blocked"] >= 3:
+            # "Blocked N times" alone doesn't say what it actually did wrong
+            # -- name the specific rule(s), most-triggered first, using the
+            # same blocked_rules tally already built above rather than
+            # leaving the merchant to go read receipts one at a time to
+            # find out.
+            top_rules = sorted(a["blocked_rules"].items(), key=lambda kv: -kv[1])
+            rule_summary = ", ".join(f"{name} ({count}x)" for name, count in top_rules)
             flags.append({
                 "severity": "medium",
                 "agent_id": agent_id,
                 "flag_type": "repeated_blocks",
                 "count": a["blocked"],
-                "detail": f"was blocked {a['blocked']} separate times in this window and kept trying anyway",
+                "detail": f"was blocked {a['blocked']} separate times in this window and kept trying anyway "
+                          f"-- caught on: {rule_summary}",
             })
 
         a["blocked_rules"] = dict(a["blocked_rules"])  # defaultdict -> plain dict, JSON-safe

@@ -70,6 +70,37 @@ def test_catalog_mismatch_block_raises_a_high_severity_flag():
     assert flag["count"] == 1
 
 
+def test_catalog_mismatch_wording_does_not_assert_malicious_intent():
+    """
+    Real feedback: the original wording ("the exact pattern of an agent
+    trying to disguise what it's actually buying") stated intent as fact.
+    An unlisted item is equally consistent with a stale product id or a
+    bug in the agent -- this file has no way to know which, and its own
+    wording shouldn't claim otherwise.
+    """
+    receipts = [_receipt("agent-x", "block", [_failed("items_are_listed")])]
+    stats = compute_digest(receipts, 0, 168)
+    detail = stats["flags"][0]["detail"]
+    assert "disguise" not in detail
+    assert "mistake" in detail  # names the innocent explanation too
+
+
+def test_repeated_blocks_names_which_rules_actually_fired():
+    """
+    Real feedback: "was blocked 7 times" alone doesn't tell a merchant
+    what the agent actually did wrong. The detail must name the specific
+    rule(s), not just a bare count.
+    """
+    receipts = (
+        [_receipt("agent-x", "block", [_failed("max_order_value")]) for _ in range(2)]
+        + [_receipt("agent-x", "block", [_failed("deny_categories")]) for _ in range(1)]
+    )
+    stats = compute_digest(receipts, 0, 168)
+    flag = next(f for f in stats["flags"] if f["flag_type"] == "repeated_blocks")
+    assert "max_order_value" in flag["detail"]
+    assert "deny_categories" in flag["detail"]
+
+
 def test_velocity_cap_hit_raises_a_medium_flag():
     receipts = [_receipt("fast-agent", "block", [_failed("velocity")])]
     stats = compute_digest(receipts, 0, 168)

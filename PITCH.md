@@ -258,6 +258,24 @@ Evidence that "tested hard" isn't a claim, it's a log. Worth a line in the pitch
   `raise_for_status()` wasn't caught anywhere. Now a typed 503 naming the escalation as
   untouched and safe to retry. Verified against a genuine live 429, not just a mock — the
   test account was still rate-limited from earlier same-day testing when this landed.
+- **The same bare-500 bug existed in the main checkout endpoint too** — found immediately
+  after fixing the escalation case, by actually running the flagship "clean cart → ALLOW"
+  flow end to end against a genuinely fresh clone of the public repo, with Razorpay still
+  really rate-limited. Fixed to degrade gracefully instead: the receipt is already signed
+  and saved by the time payment is attempted, so a Razorpay failure now returns 200 with the
+  real receipt, `payment` omitted, and an honest note — not an error hiding a decision that
+  already happened.
+- **Two of the Digest's own flag wordings were wrong, caught by Kushal actually reading
+  them, not by testing** — `catalog_mismatch` asserted "the exact pattern of an agent trying
+  to disguise what it's actually buying" as fact, when an unlisted item id is equally
+  explained by a stale product reference or a bug in the agent; fixed to name both
+  possibilities and stop there. `repeated_blocks` said "blocked N times" with no indication
+  of what rule was actually broken, even though that data (`blocked_rules`) was already being
+  computed right next to it; fixed to name the specific rule(s). Also surfaced, same
+  conversation: on real demo history `Allowed` sat at 0 in every window — nothing on screen
+  proved the system ever let a legitimate purchase through, only that it blocks things. Fixed
+  by actually running one real, correctly-signed checkout end to end (`real-shopper-agent`)
+  rather than by changing the display logic.
 
 Every one of these was found by actually trying to break the thing, not by reading the code
 and assuming it worked — several were found live, in a running browser, not in a test file.

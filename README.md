@@ -166,7 +166,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 55 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 58 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 
@@ -278,6 +278,26 @@ splitting `/digest` (fast, deterministic, no AI) from `/digest/narrate` (the slo
 called separately once the real numbers are already on screen) — same pattern the
 escalation advisor already used, just not one this endpoint had been checked against until
 it was actually loaded in a browser.
+
+**Two real wording problems in the digest's flags were found by walking through the actual
+page and taking the numbers seriously, not by reading the code.** First: on real demo
+history, `Allowed` sat at 0 for every window — meaning the only evidence on screen was of
+things being blocked, never of the system actually letting a legitimate purchase through,
+which undercuts the whole "agents can shop here safely" half of the pitch. No code bug: a
+real, correctly-signed, identity-verified checkout for a real catalog item now exists in the
+history (`real-shopper-agent`), so `Allowed` reads honestly instead of by omission. Second:
+the `catalog_mismatch` flag's wording asserted intent as fact — *"the exact pattern of an
+agent trying to disguise what it's actually buying"* — when an unlisted item id is equally
+consistent with a stale product reference or a bug in the calling agent as with genuine
+deception; this file has no way to know which, and its own wording claimed to anyway. Fixed
+to name both possibilities and stop there. Third, a related gap: `repeated_blocks` only ever
+said *"blocked N times"* with no indication of what the agent actually did wrong, even
+though `blocked_rules` (which rule fired, how often) was already being computed right next to
+it — fixed to name the specific rule(s), most-triggered first, e.g. *"caught on:
+identity_verified (7x), deny_categories (4x)."* Two new tests in `test_digest.py` guard both
+wording fixes; verified live afterward that the AI narration (which paraphrases whatever the
+deterministic text says) picked up the more honest, hedged tone automatically, with no
+prompt change needed.
 
 **Two real money-safety bugs were found and fixed by deliberately auditing for this class
 of mistake, not by chance** — see `backend/tests/test_money_safety.py` and its
