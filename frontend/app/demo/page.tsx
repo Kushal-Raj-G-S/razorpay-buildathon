@@ -6,9 +6,11 @@ import {
   tryCheckout,
   revokeAgent,
   unrevokeAgent,
+  uploadCatalog,
   MERCHANT_ID,
   type Receipt,
   type CartItemInput,
+  type CatalogProduct,
 } from "@/lib/api";
 
 const AGENT_ID = "shopping-agent-007";
@@ -28,6 +30,28 @@ const OVER_LIMIT_CART: CartItemInput[] = [
 
 const COD_CART: CartItemInput[] = [
   { id: "socks", title: "Pack of Socks", price: 40000, category: "clothing", quantity: 1 },
+];
+
+// These scenarios only make sense against a catalog that actually
+// contains these exact items -- "Clean cart" is supposed to sail
+// through, but if the merchant's real catalog doesn't have an item
+// with id "shirt", it gets correctly blocked as unlisted, which reads
+// as broken rather than as the catalog-trust defense working. This is
+// a one-click way to guarantee the four scenarios above behave as
+// advertised, regardless of whatever catalog is already saved.
+const DEMO_CATALOG: CatalogProduct[] = [
+  { id: "shirt", title: "Blue Cotton Shirt L", description: null, variants: [
+    { id: "shirt", title: "Blue Cotton Shirt L", price: 45000, category: "clothing", available: true, sku: null },
+  ] },
+  { id: "giftcard", title: "Rs 2000 Gift Card", description: null, variants: [
+    { id: "giftcard", title: "Rs 2000 Gift Card", price: 200000, category: "gift_card", available: true, sku: null },
+  ] },
+  { id: "jeans", title: "Denim Jeans 32", description: null, variants: [
+    { id: "jeans", title: "Denim Jeans 32", price: 1500000, category: "clothing", available: true, sku: null },
+  ] },
+  { id: "socks", title: "Pack of Socks", description: null, variants: [
+    { id: "socks", title: "Pack of Socks", price: 40000, category: "clothing", available: true, sku: null },
+  ] },
 ];
 
 const SCENARIOS: {
@@ -112,6 +136,21 @@ export default function DemoPage() {
   const [error, setError] = useState("");
   const [revoked, setRevoked] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [seedMessage, setSeedMessage] = useState("");
+
+  async function seedDemoCatalog() {
+    setSeeding(true);
+    setSeedMessage("");
+    try {
+      await uploadCatalog(MERCHANT_ID, DEMO_CATALOG);
+      setSeedMessage("Demo catalog loaded — these four scenarios will now behave as described.");
+    } catch (e) {
+      setSeedMessage(`Couldn't load it: ${(e as Error).message}`);
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   async function send(scenario: (typeof SCENARIOS)[number]) {
     setLoading(scenario.label);
@@ -153,6 +192,20 @@ export default function DemoPage() {
         </a>{" "}
         first.
       </p>
+
+      <div className="card p-5 mb-6 flex flex-wrap items-center gap-3 bg-paper-2/60">
+        <div className="flex-1 min-w-[220px]">
+          <p className="text-sm font-medium">These scenarios expect specific catalog items</p>
+          <p className="text-xs text-ink-muted mt-0.5">
+            If your own catalog doesn&apos;t have items named shirt/giftcard/jeans/socks,
+            &quot;Clean cart&quot; will correctly show BLOCK (unlisted item) instead of ALLOW.
+          </p>
+        </div>
+        <button onClick={seedDemoCatalog} disabled={seeding} className="btn btn-secondary shrink-0">
+          {seeding ? "Loading…" : "Load a matching demo catalog"}
+        </button>
+      </div>
+      {seedMessage && <p className="text-sm text-ink-muted mb-6">{seedMessage}</p>}
 
       <div className="grid sm:grid-cols-2 gap-3">
         {SCENARIOS.map((s, i) => (

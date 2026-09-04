@@ -195,6 +195,20 @@ export function searchCatalog(merchantId: string, query: string = "") {
   );
 }
 
+// Direct upload (merchant-only) -- used by the "load a matching demo
+// catalog" helper on the Try It page. A real merchant would normally
+// use catalogFromText or the /catalog page's form instead.
+export function uploadCatalog(merchantId: string, products: CatalogProduct[]) {
+  return request<{ status: string; product_count: number }>(
+    `/catalog`,
+    {
+      method: "POST",
+      body: JSON.stringify({ merchant_id: merchantId, catalog: { merchant_id: merchantId, products } }),
+    },
+    true
+  );
+}
+
 export function catalogFromText(merchantId: string, rawText: string) {
   return request<{ status: string; product_count: number; catalog: { products: CatalogProduct[] } }>(
     `/catalog/from-text`,
