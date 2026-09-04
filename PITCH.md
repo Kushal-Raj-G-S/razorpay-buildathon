@@ -213,7 +213,9 @@ land; it's a reference list, not something to read aloud.
   call so real numbers render before the slow AI step finishes. Every flag has a Revoke
   button right there — awareness with an action next to it, not a dead-end warning.
 - **Escalation Advisor** (`fdd4f88`) — AI drafts an approve/reject recommendation with a
-  confidence level for a human reviewing a large order; never decides anything itself.
+  confidence level for a human reviewing a large order; never decides anything itself. A
+  Reviewed tab (`f5dad40`) shows every past approve/reject decision with note and timestamp
+  — previously invisible the moment you acted on it.
 - **Policy version history** (`595d31c`) — every save snapshotted, browsable in a sidebar,
   reloadable into the form — never auto-applied, still goes through the same
   review-then-Save path as any other change.
@@ -276,6 +278,20 @@ Evidence that "tested hard" isn't a claim, it's a log. Worth a line in the pitch
   proved the system ever let a legitimate purchase through, only that it blocks things. Fixed
   by actually running one real, correctly-signed checkout end to end (`real-shopper-agent`)
   rather than by changing the display logic.
+- **The AI escalation advisor produced a false "reject — looks like fraud" on a completely
+  ordinary order** — `advise_on_escalation` embedded item prices still in paise right next
+  to an order total already converted to rupees, so a Rs 5,000 order's item showed as
+  `"price": 500000` beside `"Order total: Rs 5000"`. Caught live: a real NVIDIA call
+  actually returned "reject, high confidence... looks like a fraud attempt" citing that
+  fabricated mismatch. This is the sharpest one to have ready — it's a real instance of AI
+  advice being confidently wrong for a boring, structural reason (a units bug), which is
+  exactly the class of failure the whole "no AI in the decision path" argument is about. The
+  human still has to click Approve/Reject either way, so no money was ever at risk from
+  this one — but a merchant trusting a "high confidence" AI recommendation without checking
+  would have wrongly rejected a real customer.
+- **Escalations only ever showed pending orders — approve or reject one and it vanished
+  with no record anywhere in the app.** The original receipt still just says "escalate"
+  forever; reviewing one never touches it. A Reviewed tab now shows every past decision.
 
 Every one of these was found by actually trying to break the thing, not by reading the code
 and assuming it worked — several were found live, in a running browser, not in a test file.
