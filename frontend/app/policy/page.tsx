@@ -68,6 +68,107 @@ function Toggle({
   );
 }
 
+// Typeable dropdown for categories: pick from the merchant's real
+// catalog (so a typo can't silently create a category that never
+// matches anything at checkout), or type a new one for a category not
+// in the catalog yet. Deliberately not a plain <select> -- a merchant
+// picking two or three categories out of dozens needs to type to
+// filter, not scroll a giant list.
+function CategoryPicker({
+  values,
+  onChange,
+  options,
+  placeholder,
+  tone,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  options: string[];
+  placeholder?: string;
+  tone: "deny" | "allow";
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const filtered = options.filter(
+    (o) => !values.includes(o) && o.toLowerCase().includes(query.trim().toLowerCase())
+  );
+  const canAddNew = query.trim() && !options.includes(query.trim()) && !values.includes(query.trim());
+
+  function add(category: string) {
+    const trimmed = category.trim();
+    if (!trimmed || values.includes(trimmed)) return;
+    onChange([...values, trimmed]);
+    setQuery("");
+    setOpen(false);
+  }
+  function remove(category: string) {
+    onChange(values.filter((v) => v !== category));
+  }
+
+  return (
+    <div className="relative">
+      <div className="field-input flex flex-wrap gap-1.5 items-center min-h-[42px] py-1.5">
+        {values.map((v) => (
+          <span key={v} className={`badge text-xs flex items-center gap-1 ${tone === "deny" ? "badge-block" : "badge-allow"}`}>
+            {v}
+            <button
+              type="button"
+              onClick={() => remove(v)}
+              className="hover:opacity-60"
+              aria-label={`remove ${v}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          className="flex-1 min-w-[120px] bg-transparent outline-none text-sm"
+          value={query}
+          placeholder={values.length === 0 ? placeholder : ""}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && query.trim()) {
+              e.preventDefault();
+              add(query);
+            } else if (e.key === "Backspace" && !query && values.length > 0) {
+              remove(values[values.length - 1]);
+            }
+          }}
+        />
+      </div>
+      {open && (filtered.length > 0 || canAddNew) && (
+        <div className="absolute z-20 mt-1 w-full card p-1 max-h-52 overflow-y-auto shadow-lg">
+          {filtered.map((o) => (
+            <button
+              key={o}
+              type="button"
+              onMouseDown={() => add(o)}
+              className="block w-full text-left px-3 py-1.5 text-sm rounded hover:bg-paper-2"
+            >
+              {o}
+            </button>
+          ))}
+          {canAddNew && (
+            <button
+              type="button"
+              onMouseDown={() => add(query)}
+              className="block w-full text-left px-3 py-1.5 text-sm rounded hover:bg-paper-2 text-accent"
+            >
+              Add &quot;{query.trim()}&quot;
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Section({
   eyebrow,
   title,
@@ -90,9 +191,8 @@ function Section({
 
 export default function PolicyPage() {
   const [policy, setPolicy] = useState<Policy>(DEFAULT_POLICY);
-  const [categoriesText, setCategoriesText] = useState(DEFAULT_POLICY.deny_categories.join(", "));
-  const [allowCategoriesText, setAllowCategoriesText] = useState(DEFAULT_POLICY.allow_categories.join(", "));
   const [knownCategories, setKnownCategories] = useState<string[]>([]);
+  const [categoryError, setCategoryError] = useState("");
   const [status, setStatus] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [plainEnglish, setPlainEnglish] = useState("");
@@ -163,11 +263,7 @@ export default function PolicyPage() {
 
   useEffect(() => {
     getPolicy(MERCHANT_ID)
-      .then((p) => {
-        setPolicy(p);
-        setCategoriesText(p.deny_categories.join(", "));
-        setAllowCategoriesText(p.allow_categories.join(", "));
-      })
+      .then((p) => setPolicy(p))
       .catch(() => {})
       .finally(() => setLoading(false));
     loadHistory();
@@ -187,27 +283,30 @@ export default function PolicyPage() {
       .catch(() => {});
   }, []);
 
-  function toggleCategory(
-    text: string,
-    setText: (v: string) => void,
-    category: string
-  ) {
-    const current = text.split(",").map((c) => c.trim()).filter(Boolean);
-    const next = current.includes(category)
-      ? current.filter((c) => c !== category)
-      : [...current, category];
-    setText(next.join(", "));
+  // A category can't be both "only this is allowed" and "this is
+  // banned" at once -- functionally harmless (either check alone would
+  // still block it) but genuinely contradictory, and worth stopping
+  // before save rather than letting a confusing policy go live quietly.
+  // Both lists being EMPTY, on the other hand, is a completely normal
+  // state -- it just means categories aren't a concern for this
+  // merchant -- so that's never blocked here.
+  function overlapBetween(deny: string[], allow: string[]): string[] {
+    return deny.filter((c) => allow.includes(c));
   }
 
   async function handleSave() {
+    const overlap = overlapBetween(policy.deny_categories, policy.allow_categories);
+    if (overlap.length > 0) {
+      setCategoryError(
+        `${overlap.join(", ")} ${overlap.length === 1 ? "is" : "are"} in both the banned and ` +
+          `allowed lists -- that's a contradiction. Remove ${overlap.length === 1 ? "it" : "them"} from one.`
+      );
+      return;
+    }
+    setCategoryError("");
     setStatus("saving…");
     try {
-      const toSave: Policy = {
-        ...policy,
-        deny_categories: categoriesText.split(",").map((c) => c.trim()).filter(Boolean),
-        allow_categories: allowCategoriesText.split(",").map((c) => c.trim()).filter(Boolean),
-      };
-      await savePolicy(toSave);
+      await savePolicy(policy);
       setStatus("Saved — these rules are live.");
       loadHistory(); // this save is now part of the record too
     } catch (e) {
@@ -220,8 +319,7 @@ export default function PolicyPage() {
   // until the merchant reviews it and clicks Save themselves.
   function loadFromHistory(entry: PolicyHistoryEntry) {
     setPolicy(entry.policy);
-    setCategoriesText(entry.policy.deny_categories.join(", "));
-    setAllowCategoriesText(entry.policy.allow_categories.join(", "));
+    setCategoryError("");
     setStatus(
       `Loaded rules from ${new Date(entry.saved_at).toLocaleString()} — review, then Save to make this active again.`
     );
@@ -233,8 +331,6 @@ export default function PolicyPage() {
     try {
       const { draft } = await draftPolicyFromText(MERCHANT_ID, plainEnglish);
       setPolicy({ ...policy, ...draft });
-      setCategoriesText(draft.deny_categories.join(", "));
-      setAllowCategoriesText(draft.allow_categories.join(", "));
       setStatus("Draft filled in below — review it, then Save to apply.");
     } catch (e) {
       setDraftError((e as Error).message);
@@ -352,68 +448,41 @@ export default function PolicyPage() {
         </Section>
 
         <Section eyebrow="Catalog" title="What's banned">
+          {categoryError && (
+            <div className="card px-4 py-3 text-sm bg-danger-soft text-danger">{categoryError}</div>
+          )}
           <div>
-            <label className="field-label">Banned categories (comma separated)</label>
-            {knownCategories.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {knownCategories.map((cat) => {
-                  const active = categoriesText.split(",").map((c) => c.trim()).includes(cat);
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => toggleCategory(categoriesText, setCategoriesText, cat)}
-                      className={`badge text-xs cursor-pointer ${active ? "badge-block" : "badge-neutral"}`}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <input
-              type="text"
-              className="field-input"
-              value={categoriesText}
-              onChange={(e) => setCategoriesText(e.target.value)}
-              placeholder="gift_card, clearance"
+            <label className="field-label">Banned categories</label>
+            <CategoryPicker
+              tone="deny"
+              values={policy.deny_categories}
+              onChange={(next) => {
+                setCategoryError("");
+                setPolicy({ ...policy, deny_categories: next });
+              }}
+              options={knownCategories}
+              placeholder="Type or pick from your catalog — e.g. gift_card"
             />
-            <p className="field-hint">
-              An order containing any of these categories is blocked outright.
-              {knownCategories.length > 0 && " Click a category above, or type your own."}
-            </p>
+            <p className="field-hint">An order containing any of these categories is blocked outright.</p>
           </div>
           <div>
-            <label className="field-label">Allowed categories only (comma separated, optional)</label>
-            {knownCategories.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {knownCategories.map((cat) => {
-                  const active = allowCategoriesText.split(",").map((c) => c.trim()).includes(cat);
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => toggleCategory(allowCategoriesText, setAllowCategoriesText, cat)}
-                      className={`badge text-xs cursor-pointer ${active ? "badge-allow" : "badge-neutral"}`}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <input
-              type="text"
-              className="field-input"
-              value={allowCategoriesText}
-              onChange={(e) => setAllowCategoriesText(e.target.value)}
-              placeholder="e.g. electronics, daily_essentials — leave blank to allow everything except banned"
+            <label className="field-label">Allowed categories only (optional)</label>
+            <CategoryPicker
+              tone="allow"
+              values={policy.allow_categories}
+              onChange={(next) => {
+                setCategoryError("");
+                setPolicy({ ...policy, allow_categories: next });
+              }}
+              options={knownCategories}
+              placeholder="Leave empty to allow everything except banned"
             />
             <p className="field-hint">
               For a big catalog, naming every banned category by hand doesn&apos;t scale. Set
               this instead to restrict agents to ONLY these categories — everything else is
-              blocked, no matter what&apos;s in the banned list above. Leave blank if you&apos;d
-              rather just ban a few specific ones.
+              blocked, no matter what&apos;s in the banned list above. Leaving both this and the
+              banned list empty is perfectly normal — it just means categories aren&apos;t a
+              concern for you, and only your other rules (price, COD, frequency) apply.
             </p>
           </div>
           <div>

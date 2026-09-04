@@ -72,6 +72,20 @@ exists). Verified against the actual live database, not a fresh test one: confir
 column was genuinely missing beforehand, ran it, confirmed every existing merchant's row —
 `shop_123` included — now has `allow_categories: []`, the safe default, with zero data loss.
 
+**Follow-up, same conversation**: both category fields are now a typeable dropdown
+(`CategoryPicker` in `frontend/app/policy/page.tsx`) sourced from the merchant's own catalog
+via the existing public `/catalog/search` — pick a real category or type a new one, no more
+hand-typing a name from memory and hoping it matches exactly what the catalog uses. Direct
+question raised and answered here rather than assumed either way: **should both lists be
+allowed to stay empty?** Yes, deliberately — that's a normal, common state (categories
+simply aren't a concern for that merchant, only price/COD/frequency are), and forcing a
+choice there would be a real regression. What *is* validated, because it's a genuine
+contradiction rather than a legitimate choice: a category can't sit in both the banned and
+allowed lists at once. `handleSave` checks for that overlap and refuses to save with a plain
+message naming exactly which categories conflict, until resolved — verified live by
+deliberately creating the overlap, confirming Save was blocked with the right message,
+removing the duplicate, and confirming Save then succeeded.
+
 ## Speak your rules instead of typing them
 
 A mic button next to the plain-English box on the Rules page uses the browser's own
