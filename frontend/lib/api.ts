@@ -40,6 +40,10 @@ export type Policy = {
   merchant_id: string;
   max_order_value: number;
   deny_categories: string[];
+  // Non-empty means "only these categories" (a whitelist) -- for a
+  // large catalog where naming every banned category by hand doesn't
+  // scale. Empty (the default) means no allow-list restriction at all.
+  allow_categories: string[];
   max_units_per_sku: number;
   escalate_above: number | null;
   require_signed_identity: boolean;
@@ -176,6 +180,7 @@ export type PolicyDraft = {
   merchant_id: string;
   max_order_value: number;
   deny_categories: string[];
+  allow_categories: string[];
   max_units_per_sku: number;
   escalate_above: number | null;
   require_signed_identity: boolean;

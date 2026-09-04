@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   getPolicy,
@@ -12,10 +12,29 @@ import {
   type PolicyHistoryEntry,
 } from "@/lib/api";
 
+// Minimal shape of the browser's built-in Web Speech API -- not part of
+// TypeScript's standard DOM lib, and we only need a few fields of it.
+type SpeechRecognitionEventLike = {
+  results: ArrayLike<ArrayLike<{ transcript: string }>>;
+  resultIndex: number;
+};
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+};
+type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
+
 const DEFAULT_POLICY: Policy = {
   merchant_id: MERCHANT_ID,
   max_order_value: 1000000, // Rs 10,000 in paise
   deny_categories: ["gift_card"],
+  allow_categories: [],
   max_units_per_sku: 5,
   escalate_above: null,
   require_signed_identity: true,
@@ -71,11 +90,63 @@ function Section({
 export default function PolicyPage() {
   const [policy, setPolicy] = useState<Policy>(DEFAULT_POLICY);
   const [categoriesText, setCategoriesText] = useState(DEFAULT_POLICY.deny_categories.join(", "));
+  const [allowCategoriesText, setAllowCategoriesText] = useState(DEFAULT_POLICY.allow_categories.join(", "));
   const [status, setStatus] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [plainEnglish, setPlainEnglish] = useState("");
   const [drafting, setDrafting] = useState(false);
   const [draftError, setDraftError] = useState("");
+
+  // Not every owner wants to type out their rules -- this feeds the
+  // exact same textarea the AI drafter already reads, using the
+  // browser's own built-in speech recognition. No backend change: by
+  // the time text lands here, it's indistinguishable from typing.
+  const [listening, setListening] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(true);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as unknown as { SpeechRecognition?: SpeechRecognitionCtor }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionCtor }).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-IN";
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      // Real bug, found live: in continuous mode, event.results is
+      // cumulative across the whole listening session -- every prior
+      // utterance is still in there. Joining the whole array on every
+      // firing and prepending it onto text that already has those same
+      // earlier words duplicated everything said before the last pause.
+      // event.resultIndex marks where the NEW results start; only those
+      // are new speech since the previous firing.
+      let newText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        newText += event.results[i][0].transcript;
+      }
+      if (!newText.trim()) return;
+      setPlainEnglish((prev) => (prev ? `${prev} ${newText}` : newText));
+    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+  }, []);
+
+  function toggleListening() {
+    if (!recognitionRef.current) return;
+    if (listening) {
+      recognitionRef.current.stop();
+      setListening(false);
+    } else {
+      recognitionRef.current.start();
+      setListening(true);
+    }
+  }
 
   const [history, setHistory] = useState<PolicyHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -93,6 +164,7 @@ export default function PolicyPage() {
       .then((p) => {
         setPolicy(p);
         setCategoriesText(p.deny_categories.join(", "));
+        setAllowCategoriesText(p.allow_categories.join(", "));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -105,6 +177,7 @@ export default function PolicyPage() {
       const toSave: Policy = {
         ...policy,
         deny_categories: categoriesText.split(",").map((c) => c.trim()).filter(Boolean),
+        allow_categories: allowCategoriesText.split(",").map((c) => c.trim()).filter(Boolean),
       };
       await savePolicy(toSave);
       setStatus("Saved — these rules are live.");
@@ -120,6 +193,7 @@ export default function PolicyPage() {
   function loadFromHistory(entry: PolicyHistoryEntry) {
     setPolicy(entry.policy);
     setCategoriesText(entry.policy.deny_categories.join(", "));
+    setAllowCategoriesText(entry.policy.allow_categories.join(", "));
     setStatus(
       `Loaded rules from ${new Date(entry.saved_at).toLocaleString()} — review, then Save to make this active again.`
     );
@@ -132,6 +206,7 @@ export default function PolicyPage() {
       const { draft } = await draftPolicyFromText(MERCHANT_ID, plainEnglish);
       setPolicy({ ...policy, ...draft });
       setCategoriesText(draft.deny_categories.join(", "));
+      setAllowCategoriesText(draft.allow_categories.join(", "));
       setStatus("Draft filled in below — review it, then Save to apply.");
     } catch (e) {
       setDraftError((e as Error).message);
@@ -165,9 +240,23 @@ export default function PolicyPage() {
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
         className="card p-7 mb-6 bg-paper-2/60"
       >
-        <p className="field-label mb-1">Describe your rules in plain English instead</p>
+        <div className="flex items-center justify-between mb-1 gap-3">
+          <p className="field-label mb-0">Describe your rules in plain English instead</p>
+          {speechSupported && (
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={`btn text-xs px-3 py-1.5 border shrink-0 ${
+                listening ? "btn-danger" : "btn-ghost border-border"
+              }`}
+            >
+              {listening ? "● Stop" : "🎙 Speak instead"}
+            </button>
+          )}
+        </div>
         <p className="field-hint mb-3 mt-0">
           AI turns this into the fields below — it only fills the form, it never saves by itself.
+          {speechSupported && " Don't want to type? Tap the mic and just talk."}
         </p>
         <textarea
           className="field-input resize-none"
@@ -184,6 +273,12 @@ export default function PolicyPage() {
           >
             {drafting ? "Drafting…" : "Draft rules from this"}
           </button>
+          {listening && (
+            <p className="text-sm text-accent flex items-center gap-1.5">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+              Listening…
+            </p>
+          )}
           {draftError && <p className="text-sm text-danger">{draftError}</p>}
         </div>
       </motion.div>
@@ -239,6 +334,22 @@ export default function PolicyPage() {
               placeholder="gift_card, clearance"
             />
             <p className="field-hint">An order containing any of these categories is blocked outright.</p>
+          </div>
+          <div>
+            <label className="field-label">Allowed categories only (comma separated, optional)</label>
+            <input
+              type="text"
+              className="field-input"
+              value={allowCategoriesText}
+              onChange={(e) => setAllowCategoriesText(e.target.value)}
+              placeholder="e.g. electronics, daily_essentials — leave blank to allow everything except banned"
+            />
+            <p className="field-hint">
+              For a big catalog, naming every banned category by hand doesn&apos;t scale. Set
+              this instead to restrict agents to ONLY these categories — everything else is
+              blocked, no matter what&apos;s in the banned list above. Leave blank if you&apos;d
+              rather just ban a few specific ones.
+            </p>
           </div>
           <div>
             <label className="field-label">Max units of one item per order</label>
@@ -360,7 +471,9 @@ export default function PolicyPage() {
                 ₹{(entry.policy.max_order_value / 100).toLocaleString()} limit
               </p>
               <p className="text-xs text-ink-muted mt-0.5">
-                {entry.policy.deny_categories.length > 0
+                {entry.policy.allow_categories.length > 0
+                  ? `only ${entry.policy.allow_categories.length} categor${entry.policy.allow_categories.length === 1 ? "y" : "ies"} allowed`
+                  : entry.policy.deny_categories.length > 0
                   ? `${entry.policy.deny_categories.length} banned categor${entry.policy.deny_categories.length === 1 ? "y" : "ies"}`
                   : "no banned categories"}
                 {" · "}

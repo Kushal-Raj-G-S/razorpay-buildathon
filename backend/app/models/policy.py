@@ -12,6 +12,20 @@ class Policy(BaseModel):
 
     max_order_value: int              # in paise. e.g. 500000 = Rs 5000 max per order
     deny_categories: list[str] = []   # e.g. ["gift_card", "clearance"]
+
+    # deny_categories works for a small shop with a handful of
+    # categories -- ban the one or two that are a problem. It falls
+    # apart for a catalog the size of Amazon's: "only let agents buy
+    # electronics and daily essentials" would mean denying every other
+    # category by hand, and silently stops working the day a new
+    # category gets added. allow_categories is the other direction: when
+    # non-empty, an item's category MUST be in this list or it's
+    # blocked, no matter what deny_categories says. Empty (the default)
+    # means no allow-list restriction at all -- purely additive, every
+    # policy saved before this field existed keeps behaving exactly as
+    # it did.
+    allow_categories: list[str] = []
+
     max_units_per_sku: int = 10       # can't buy more than this of one item
     escalate_above: int | None = None # orders above this get flagged for human review instead of auto-blocked
     require_signed_identity: bool = True  # if True, agent MUST prove identity (step 1 from our chat)

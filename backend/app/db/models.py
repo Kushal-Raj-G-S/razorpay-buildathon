@@ -22,6 +22,7 @@ class PolicyRow(SQLModel, table=True):
     merchant_id: str = Field(primary_key=True)
     max_order_value: int
     deny_categories: list[str] = Field(sa_column=Column(JSON), default_factory=list)
+    allow_categories: list[str] = Field(sa_column=Column(JSON), default_factory=list)
     max_units_per_sku: int = 10
     escalate_above: Optional[int] = None
     require_signed_identity: bool = True

@@ -94,6 +94,7 @@ def get_policy(session: Session, merchant_id: str) -> Policy | None:
         merchant_id=row.merchant_id,
         max_order_value=row.max_order_value,
         deny_categories=row.deny_categories,
+        allow_categories=row.allow_categories or [],
         max_units_per_sku=row.max_units_per_sku,
         escalate_above=row.escalate_above,
         require_signed_identity=row.require_signed_identity,

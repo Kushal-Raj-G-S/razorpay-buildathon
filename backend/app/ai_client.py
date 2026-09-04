@@ -81,6 +81,10 @@ agents into a strict JSON policy object. The shape MUST be exactly:
 {
   "max_order_value": <integer, rupees, the largest single order allowed>,
   "deny_categories": [<lowercase category strings that are always banned>],
+  "allow_categories": [<lowercase category strings -- if non-empty, ONLY these
+                        categories may be bought, everything else is blocked.
+                        Leave empty [] unless they describe an allow-list;
+                        most merchants only ever describe what to BAN>],
   "max_units_per_sku": <integer, max quantity of one item per order>,
   "escalate_above": <integer rupees, or null if not mentioned -- orders above
                       this are sent to a human instead of blocked, IF this
@@ -106,8 +110,17 @@ Rules for interpreting the English:
   true, allow_cod_for_agents false, max_orders_per_agent_per_window null,
   velocity_window_minutes 60.
 - "no gift cards" / "block gift cards" -> add "gift_card" to deny_categories.
+- "only let agents buy electronics and daily essentials" / "agents may only
+  purchase X and Y" / "restrict agents to just these categories" -> put those
+  categories in allow_categories instead of deny_categories. This is the
+  opposite direction: allow_categories is a whitelist (only these are
+  permitted), deny_categories is a blacklist (these specific ones are banned).
+  A merchant describing what agents CAN buy wants allow_categories; a merchant
+  describing what agents CANNOT buy wants deny_categories. Don't set both from
+  the same sentence unless they clearly described both directions.
 - Category names should be simple lowercase words matching common sense
-  categories like clothing, gift_card, electronics, accessories, footwear.
+  categories like clothing, gift_card, electronics, accessories, footwear,
+  daily_essentials, groceries.
 - "allow COD" / "allow cash on delivery" / "pay on delivery is fine" ->
   allow_cod_for_agents true. Do not set this true unless they say so
   explicitly -- COD needs zero payment authorization to place, so the
@@ -271,6 +284,7 @@ async def compile_policy_text(merchant_id: str, plain_english: str) -> dict:
 
     result.setdefault("max_order_value", 10000)
     result.setdefault("deny_categories", [])
+    result.setdefault("allow_categories", [])
     result.setdefault("max_units_per_sku", 5)
     result.setdefault("escalate_above", None)
     result.setdefault("require_signed_identity", True)

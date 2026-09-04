@@ -47,6 +47,43 @@ for how the build was scoped.
    pattern the way a large company might. Every flag has a real action next to it —
    Revoke, right there — not just a warning with nowhere to act on it.
 
+## Allow-listing categories, for a catalog too big to deny-list by hand
+
+`deny_categories` (ban specific categories) works for a small shop with a handful of
+categories — ban the one or two that are a problem. It falls apart for a catalog the size of
+a real marketplace: "only let agents buy electronics and daily essentials" would mean
+denying every other category by hand, and silently under-protects the day a new category
+gets added. `allow_categories` is the other direction — when set, an item's category MUST be
+in that list or it's blocked, no matter what `deny_categories` says. Empty (the default)
+means no restriction, so every policy saved before this field existed keeps behaving exactly
+as it did — this is purely additive. New deterministic check
+(`engine/evaluate.py::check_allow_categories`), the AI drafter now distinguishes "ban these"
+from "only allow these" from plain English (verified live: "only let agents buy electronics
+and daily essentials" correctly filled `allow_categories`, not `deny_categories`), and the
+Rules page has a matching field.
+
+**This one needed a real database migration, not just new code** — `allow_categories` is a
+new column on a table (`policies`) that already had real rows for real merchants on the live
+database. SQLModel's `create_all()` only creates missing *tables*; it never alters one that
+already exists, so a plain deploy would have crashed every existing merchant's policy read
+with "no such column." `db/session.py` now runs a small idempotent `ALTER TABLE ... ADD
+COLUMN` migration on startup, safe to call every time (it silently no-ops once the column
+exists). Verified against the actual live database, not a fresh test one: confirmed the
+column was genuinely missing beforehand, ran it, confirmed every existing merchant's row —
+`shop_123` included — now has `allow_categories: []`, the safe default, with zero data loss.
+
+## Speak your rules instead of typing them
+
+A mic button next to the plain-English box on the Rules page uses the browser's own
+Web Speech API to transcribe speech straight into the same textarea the AI drafter already
+reads — zero backend changes, since by the time text lands there it's indistinguishable from
+typing. Deliberately scoped small and safe: a bigger version of "make rules easier to set
+up" — letting a merchant hand over their website URL or a product PDF and having AI build
+the catalog from it — was considered and explicitly *not* built this close to the deadline,
+since fetching an arbitrary merchant-supplied URL opens real security questions (SSRF) that
+deserve more room than a last-minute change allows. Noted here as deliberate scope, not an
+oversight.
+
 ## Escalations: a real fraud false-positive found and fixed, plus history
 
 Auditing the Review queue the same way the Digest was audited turned up a genuine problem
@@ -215,7 +252,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 60 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 66 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 

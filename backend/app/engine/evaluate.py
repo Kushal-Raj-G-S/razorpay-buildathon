@@ -61,6 +61,30 @@ def check_deny_categories(cart: Cart, policy: Policy) -> RuleResult:
     return RuleResult(rule_name="deny_categories", passed=True, detail="no banned categories found")
 
 
+def check_allow_categories(cart: Cart, policy: Policy) -> RuleResult:
+    """
+    The other direction from check_deny_categories: for a merchant with
+    a huge catalog (a marketplace, not a boutique), naming every banned
+    category by hand doesn't scale and silently under-protects the
+    moment a new category is added. If allow_categories is set, an
+    item's category must be IN that list -- everything else is blocked,
+    regardless of what deny_categories says. Empty list (the default)
+    means this check is a no-op, so every policy saved before this field
+    existed behaves identically to before.
+    """
+    if not policy.allow_categories:
+        return RuleResult(rule_name="allow_categories", passed=True, detail="no allow-list set")
+    for item in cart.items:
+        if item.category not in policy.allow_categories:
+            return RuleResult(
+                rule_name="allow_categories",
+                passed=False,
+                detail=f"item '{item.title}' has category '{item.category}', which isn't in the "
+                       f"allowed list ({', '.join(policy.allow_categories)})",
+            )
+    return RuleResult(rule_name="allow_categories", passed=True, detail="every item's category is allowed")
+
+
 def check_max_units_per_sku(cart: Cart, policy: Policy) -> RuleResult:
     for item in cart.items:
         if item.quantity > policy.max_units_per_sku:
@@ -138,6 +162,7 @@ ALL_CHECKS = [
     check_items_are_listed,
     check_max_order_value,
     check_deny_categories,
+    check_allow_categories,
     check_max_units_per_sku,
     check_cod_allowed,
 ]
