@@ -175,7 +175,10 @@ def test_poisoned_cart_blocks_over_http(client):
     assert r.status_code == 200
     body = r.json()
     assert body["receipt"]["decision"] == "block"
-    assert "payment" not in body
+    # CheckoutResponse always includes payment/order/escalation_id/note (null when
+    # not applicable) now that the response has a declared schema -- a predictable
+    # shape beats a key that sometimes exists and sometimes doesn't.
+    assert body["payment"] is None
 
 
 def test_revoked_agent_is_refused_over_http(client):

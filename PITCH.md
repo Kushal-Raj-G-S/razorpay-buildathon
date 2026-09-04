@@ -220,10 +220,12 @@ land; it's a reference list, not something to read aloud.
 - **Razorpay-key auth** (`b0d3b60`) — a merchant's own real Razorpay test-mode keys become
   their Warrant credential directly, verified with a real live call to Razorpay, not a
   format check. No second, Warrant-only credential is ever minted.
-- **Typed, self-describing API** (`cc4be35`) — the four endpoints an outside admin panel
-  (i.e. Razorpay's own dashboard, not ours) would most want to render directly now publish
-  real OpenAPI schemas at `/docs`, not "some JSON object." This is the argument that the
-  Next.js dashboard is a reference implementation, not the product.
+- **Typed, self-describing API — now every endpoint** (`cc4be35` started it with the four
+  most Digest-adjacent routes, a follow-up commit finished the rest: catalog, policy,
+  checkout, receipts, escalations, revocation, red-team, merchant registration, UCP
+  discovery). `/docs` and `/openapi.json` describe every route's real shape now, not "some
+  JSON object" — checkable directly against `/openapi.json`, zero routes left untyped. This
+  is the argument that the Next.js dashboard is a reference implementation, not the product.
 - **COD governance + velocity limiting** (`afc9694`) — the India-specific gap no protocol
   (AP2, ACP, UCP, even UPI Reserve Pay) covers: agentic Cash on Delivery needs zero payment
   authorization, and order *frequency* matters as much as order size.

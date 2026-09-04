@@ -70,10 +70,18 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.models.cart import Cart, CartItem
-from app.models.catalog import Catalog, Product, Variant
-from app.models.policy import Policy, PolicyHistoryEntry
-from app.models.escalation import EscalationAdviceResponse
+from app.models.catalog import (
+    Catalog, Product, Variant, CatalogSaveResponse, CatalogFromTextResponse, CatalogSearchResponse,
+)
+from app.models.policy import Policy, PolicyHistoryEntry, PolicyDraftResponse
+from app.models.escalation import EscalationAdviceResponse, EscalationReviewResponse
 from app.models.receipt import Receipt
+from app.models.checkout import CheckoutResponse
+from app.models.merchant import MerchantRegisterResponse, MerchantRegisterWithRazorpayResponse
+from app.models.common import StatusResponse, AgentActionResponse, AgentRegisterResponse, PublicKeyResponse
+from app.models.red_team import RedTeamRunResult, RedTeamRunRecord
+from app.db.models import EscalationRow
+from app.models.ucp import UcpProfileResponse
 from app.engine.evaluate import evaluate
 from app.engine.digest import compute_digest
 from app.models.digest import DigestResponse, DigestNarrateResponse
@@ -134,7 +142,7 @@ def _resolve_items_against_catalog(session: Session, merchant_id: str, items: li
     return resolved
 
 
-@app.get("/.well-known/ucp")
+@app.get("/.well-known/ucp", response_model=UcpProfileResponse)
 def ucp_profile():
     """
     Tells any AI agent: "here's how to talk to this shop." Loosely
@@ -158,7 +166,7 @@ class MerchantRegisterRequest(BaseModel):
     merchant_id: str
 
 
-@app.post("/merchants/register")
+@app.post("/merchants/register", response_model=MerchantRegisterResponse)
 def register_merchant(req: MerchantRegisterRequest, session: Session = Depends(get_session)):
     """
     Creates a shop account. Returns the API key exactly once -- same
@@ -184,7 +192,7 @@ class MerchantRegisterWithRazorpayRequest(BaseModel):
     razorpay_key_secret: str
 
 
-@app.post("/merchants/register-with-razorpay")
+@app.post("/merchants/register-with-razorpay", response_model=MerchantRegisterWithRazorpayResponse)
 async def register_merchant_with_razorpay(req: MerchantRegisterWithRazorpayRequest,
                                            session: Session = Depends(get_session)):
     """
@@ -240,7 +248,7 @@ class CatalogUploadRequest(BaseModel):
     catalog: Catalog
 
 
-@app.post("/catalog")
+@app.post("/catalog", response_model=CatalogSaveResponse)
 def upload_catalog(req: CatalogUploadRequest, session: Session = Depends(get_session),
                     authorization: str | None = Header(None)):
     _auth(req.merchant_id, session, authorization)
@@ -253,7 +261,7 @@ class CatalogFromTextRequest(BaseModel):
     raw_text: str   # e.g. one messy product per line, however the shop owner typed it
 
 
-@app.post("/catalog/from-text")
+@app.post("/catalog/from-text", response_model=CatalogFromTextResponse)
 async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depends(get_session),
                              authorization: str | None = Header(None)):
     """
@@ -288,7 +296,7 @@ async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depe
     return {"status": "saved", "product_count": len(products), "catalog": catalog}
 
 
-@app.post("/catalog/search")
+@app.post("/catalog/search", response_model=CatalogSearchResponse)
 def search_catalog(merchant_id: str, query: str = "", session: Session = Depends(get_session)):
     """No auth -- this is the endpoint a shopping agent calls to browse. Same as a real storefront."""
     catalog = repo.get_catalog(session, merchant_id)
@@ -303,7 +311,7 @@ def search_catalog(merchant_id: str, query: str = "", session: Session = Depends
 
 # ---------- Policy ----------
 
-@app.post("/policy")
+@app.post("/policy", response_model=StatusResponse)
 def save_policy_endpoint(policy: Policy, session: Session = Depends(get_session),
                           authorization: str | None = Header(None)):
     _auth(policy.merchant_id, session, authorization)
@@ -316,7 +324,7 @@ class PolicyDraftRequest(BaseModel):
     plain_english: str  # e.g. "don't let agents buy gift cards, cap orders at 5000 rupees"
 
 
-@app.post("/policy/draft-from-text")
+@app.post("/policy/draft-from-text", response_model=PolicyDraftResponse)
 async def draft_policy_from_text(req: PolicyDraftRequest, session: Session = Depends(get_session),
                                   authorization: str | None = Header(None)):
     """
@@ -334,7 +342,7 @@ async def draft_policy_from_text(req: PolicyDraftRequest, session: Session = Dep
     return {"draft": draft, "note": "review this, then POST it to /policy to actually apply it"}
 
 
-@app.get("/policy/{merchant_id}")
+@app.get("/policy/{merchant_id}", response_model=Policy)
 def get_policy_endpoint(merchant_id: str, session: Session = Depends(get_session)):
     """No auth -- a shopping agent needs to read the rules before it can shop here."""
     policy = repo.get_policy(session, merchant_id)
@@ -367,7 +375,7 @@ class AgentRegisterRequest(BaseModel):
     public_key_hex: str
 
 
-@app.post("/agents/register")
+@app.post("/agents/register", response_model=AgentRegisterResponse)
 def register_agent_endpoint(req: AgentRegisterRequest, session: Session = Depends(get_session)):
     """No merchant auth -- this is the AGENT proving its own identity, not a merchant
     management action. Any agent may register itself; whether it can actually buy
@@ -386,7 +394,7 @@ class CheckoutRequest(BaseModel):
     payment_mode: str = "prepaid"     # "prepaid" | "cod" -- see models/cart.py
 
 
-@app.post("/checkout-sessions")
+@app.post("/checkout-sessions", response_model=CheckoutResponse)
 async def checkout(req: CheckoutRequest, session: Session = Depends(get_session),
                     idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     # If we've seen this exact Idempotency-Key before, hand back the SAME
@@ -464,7 +472,7 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
 
 # ---------- Receipts (for the dashboard) ----------
 
-@app.get("/receipts")
+@app.get("/receipts", response_model=list[Receipt])
 def list_receipts_endpoint(merchant_id: str, session: Session = Depends(get_session),
                             authorization: str | None = Header(None)):
     _auth(merchant_id, session, authorization)
@@ -549,7 +557,7 @@ async def narrate_digest(req: DigestNarrateRequest, session: Session = Depends(g
     return {"narrative": narrative}
 
 
-@app.get("/signing-public-key")
+@app.get("/signing-public-key", response_model=PublicKeyResponse)
 def get_public_key(session: Session = Depends(get_session)):
     """Public on purpose -- anyone must be able to independently verify our receipts are genuine."""
     _, public_key = repo.get_or_create_signing_key(session)
@@ -558,7 +566,7 @@ def get_public_key(session: Session = Depends(get_session)):
 
 # ---------- Escalations: the human-review queue ----------
 
-@app.get("/escalations")
+@app.get("/escalations", response_model=list[EscalationRow])
 def list_escalations_endpoint(merchant_id: str, status: str = "pending",
                                session: Session = Depends(get_session),
                                authorization: str | None = Header(None)):
@@ -598,7 +606,7 @@ class ReviewRequest(BaseModel):
     note: str | None = None
 
 
-@app.post("/escalations/{escalation_id}/review")
+@app.post("/escalations/{escalation_id}/review", response_model=EscalationReviewResponse)
 async def review_escalation_endpoint(escalation_id: int, req: ReviewRequest,
                                       session: Session = Depends(get_session),
                                       authorization: str | None = Header(None)):
@@ -659,7 +667,7 @@ async def review_escalation_endpoint(escalation_id: int, req: ReviewRequest,
 
 # ---------- Revocation ----------
 
-@app.post("/agents/{agent_id}/revoke")
+@app.post("/agents/{agent_id}/revoke", response_model=AgentActionResponse)
 def revoke_agent(agent_id: str, merchant_id: str, session: Session = Depends(get_session),
                   authorization: str | None = Header(None)):
     _auth(merchant_id, session, authorization)
@@ -667,7 +675,7 @@ def revoke_agent(agent_id: str, merchant_id: str, session: Session = Depends(get
     return {"status": "revoked", "agent_id": agent_id}
 
 
-@app.post("/agents/{agent_id}/unrevoke")
+@app.post("/agents/{agent_id}/unrevoke", response_model=AgentActionResponse)
 def unrevoke_agent(agent_id: str, merchant_id: str, session: Session = Depends(get_session),
                     authorization: str | None = Header(None)):
     _auth(merchant_id, session, authorization)
@@ -693,7 +701,7 @@ def _catalog_summary_for_prompt(catalog) -> str:
     return "\n".join(lines)
 
 
-@app.post("/red-team/run")
+@app.post("/red-team/run", response_model=RedTeamRunResult)
 async def run_red_team(req: RedTeamRequest, session: Session = Depends(get_session),
                         authorization: str | None = Header(None)):
     """
@@ -780,7 +788,7 @@ async def run_red_team(req: RedTeamRequest, session: Session = Depends(get_sessi
     return {"run_id": run_id, "goal": req.goal, "outcome": outcome, "rounds": rounds}
 
 
-@app.get("/red-team/runs")
+@app.get("/red-team/runs", response_model=list[RedTeamRunRecord])
 def list_red_team_runs_endpoint(merchant_id: str, session: Session = Depends(get_session),
                                  authorization: str | None = Header(None)):
     _auth(merchant_id, session, authorization)

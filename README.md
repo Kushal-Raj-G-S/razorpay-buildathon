@@ -81,24 +81,33 @@ merchant using this through Razorpay would see it inside Razorpay's own dashboar
 — so the real deliverable is the API, and it has to be usable without reading `main.py`'s
 source to know what a response looks like.
 
-`GET /digest`, `POST /digest/narrate`, `GET /policy/{merchant_id}/history`, and
-`GET /escalations/{id}/advice` — the four routes an outside admin panel would most want to
-render directly — now declare a typed Pydantic `response_model`
-(`backend/app/models/digest.py`, the additions to `models/policy.py` and
-`models/escalation.py`), so `GET /docs` (Swagger UI) and `GET /openapi.json` describe their
-real shape: named, browsable, expandable schemas (`DigestResponse`, `DigestStats`,
-`AgentFootprint`, `PolicyHistoryEntry`, `EscalationAdviceResponse`, …), not "some JSON
-object." Verified live: hit `/openapi.json` directly and confirmed each of those four routes
-resolves to a real `$ref`, then reloaded the actual frontend against the now-typed backend
-and confirmed nothing broke — the shapes were already correct, this just makes FastAPI
-publish and enforce them.
+**Every single endpoint now declares a typed Pydantic `response_model`** — started with the
+four most Digest-adjacent routes, then extended to the rest: catalog, policy, checkout,
+receipts, escalations, agent revocation, red-team, merchant registration (both paths), and
+the UCP discovery profile. New model files: `models/checkout.py`, `models/merchant.py`,
+`models/common.py`, `models/red_team.py`, `models/ucp.py`, plus additions to the existing
+`models/catalog.py`, `models/policy.py`, and `models/escalation.py`. `GET /docs` and
+`GET /openapi.json` now describe every route's real shape — named, browsable, expandable
+schemas, not "some JSON object" — which is checkable directly: a small audit script against
+`/openapi.json` confirms zero routes left with an untyped response.
 
-**Not done yet**: the rest of the routes (`/receipts`, `/escalations`, `/red-team/runs`,
-`/checkout-sessions`, catalog and merchant endpoints) still return plain dicts or
-SQLModel rows with no declared `response_model`, so their `/docs` entries are accurate for
-the request side but vague on the response side. Same fix, same pattern, just not applied
-everywhere yet — this was scoped to the four most Digest-adjacent, most-likely-to-be-
-rendered-elsewhere routes first.
+One real, honest side effect of typing `POST /checkout-sessions`: the response now always
+includes `payment`/`order`/`escalation_id`/`note` (`null` when not applicable) instead of
+sometimes omitting the key entirely — a more predictable contract, but it changed one
+existing test's assertion from "key absent" to "key is null" (`test_api.py`). Not a
+behavior regression for the frontend (JS treats `null` and `undefined` the same in every
+place these fields are read), but worth naming since it's the kind of thing that looks like
+nothing until a strict outside client checks for key presence instead of value.
+
+**A real, unrelated bug surfaced while verifying this live, not fixed here**: approving an
+escalation when Razorpay's API is rate-limited (429, which real testing traffic against a
+test-mode account hits often) returns a bare, unhandled `500 Internal Server Error` instead
+of a clean typed error response — `create_payment_link`'s `raise_for_status()` isn't caught
+anywhere in `review_escalation_endpoint`. The escalation itself stays safely pending and
+retryable (that ordering was fixed earlier — see git history), but the HTTP response the
+caller gets in that moment is an opaque 500, not something an integrator's admin panel could
+render meaningfully. Disclosed, not fixed, since it's outside what "type the endpoints" asked
+for.
 
 ## Why no AI in the decision path
 

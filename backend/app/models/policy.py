@@ -37,6 +37,15 @@ class Policy(BaseModel):
     velocity_window_minutes: int = 60
 
 
+class PolicyDraftResponse(BaseModel):
+    """POST /policy/draft-from-text's response. `draft` is typed as a
+    full Policy -- ai_client.compile_policy_text always fills every
+    field via setdefault before returning, so this also catches, at the
+    API boundary, any future case where that stops being true."""
+    draft: Policy
+    note: str
+
+
 class PolicyHistoryEntry(BaseModel):
     """One row from GET /policy/{merchant_id}/history -- see db/models.py's
     PolicyHistoryRow. Typed here (rather than the endpoint just returning

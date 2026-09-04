@@ -34,3 +34,18 @@ class Catalog(BaseModel):
                 if v.id == variant_id:
                     return v
         return None
+
+
+class CatalogSaveResponse(BaseModel):
+    status: str
+    product_count: int
+
+
+class CatalogFromTextResponse(BaseModel):
+    status: str
+    product_count: int
+    catalog: Catalog
+
+
+class CatalogSearchResponse(BaseModel):
+    products: list[Product]
