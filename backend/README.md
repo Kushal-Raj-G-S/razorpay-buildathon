@@ -1,4 +1,4 @@
-# Warrant — backend
+# Nope.ai — backend
 
 FastAPI + SQLModel. See the [root README](../README.md) for what this project is; this
 file is just how to run this half of it.

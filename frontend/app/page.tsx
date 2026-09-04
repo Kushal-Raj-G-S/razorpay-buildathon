@@ -63,7 +63,7 @@ export default function Home() {
           >
             Every agentic-commerce protocol lets the <em>buyer</em> put a leash on the agent.
             None of them let the <em>merchant</em> say what it will accept — or prove, afterward,
-            what it decided. Warrant is that missing half.
+            what it decided. Nope.ai is that missing half.
           </motion.p>
 
           <motion.div
@@ -141,7 +141,7 @@ export default function Home() {
             <p className="text-sm text-ink-muted leading-relaxed">
               AP2, ACP, UCP, even UPI Reserve Pay — none of them govern Cash on Delivery, because
               COD barely exists outside India. It&apos;s 50–70% of real D2C orders here, and needs
-              zero payment authorization to place. Warrant gates it by default.
+              zero payment authorization to place. Nope.ai gates it by default.
             </p>
           </Reveal>
         </div>

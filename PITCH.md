@@ -60,7 +60,7 @@ Don't read this verbatim — read it twice, then say it in your own words. Pause
 
 ### [2:05–2:40] What I built
 
-> So I built the missing half. It's called Warrant.
+> So I built the missing half. It's called Nope.ai.
 >
 > It does four things. It turns a merchant's messy product data — pasted text, or their real
 > price-list PDF — into a UCP-shaped catalog, so they're shoppable, filling the primitive Razorpay
@@ -95,7 +95,7 @@ Don't read this verbatim — read it twice, then say it in your own words. Pause
 >
 > *[run it]*
 >
-> The agent's identity verifies. Its authority is valid. The cart is poisoned. Warrant blocks it on
+> The agent's identity verifies. Its authority is valid. The cart is poisoned. Nope.ai blocks it on
 > the merchant's own rule, and the receipt names the exact line item and the exact rule that caught it.
 >
 > *[show revocation demo briefly]*
@@ -129,7 +129,7 @@ graduation year (2027), in-person from September (your call), 6 or 12 months (yo
 
 **Track:** 01 — AI Growth & Agentic Commerce
 
-**Project name:** Warrant
+**Project name:** Nope.ai
 
 **What it solves** (fits a short box):
 
@@ -142,7 +142,7 @@ graduation year (2027), in-person from September (your call), 6 or 12 months (yo
 > None lets the *merchant* declare what it will accept, or prove what it decided. There is no field
 > in any spec whose author is the merchant and whose subject is the agent.
 >
-> Warrant is that missing half: a UCP-shaped catalog so a Razorpay merchant becomes shoppable, a
+> Nope.ai is that missing half: a UCP-shaped catalog so a Razorpay merchant becomes shoppable, a
 > deterministic policy engine enforcing rules the merchant wrote, signed decision receipts that hold
 > up in a dispute, and merchant-side revocation — which AP2, ACP, x402 and Web Bot Auth all leave
 > undefined. AI authors the rules; deterministic code enforces them, because NIST measured agent
@@ -221,8 +221,8 @@ land; it's a reference list, not something to read aloud.
   reloadable into the form — never auto-applied, still goes through the same
   review-then-Save path as any other change.
 - **Razorpay-key auth** (`b0d3b60`) — a merchant's own real Razorpay test-mode keys become
-  their Warrant credential directly, verified with a real live call to Razorpay, not a
-  format check. No second, Warrant-only credential is ever minted.
+  their Nope.ai credential directly, verified with a real live call to Razorpay, not a
+  format check. No second, Nope.ai-only credential is ever minted.
 - **Typed, self-describing API — now every endpoint** (`cc4be35` started it with the four
   most Digest-adjacent routes, a follow-up commit finished the rest: catalog, policy,
   checkout, receipts, escalations, revocation, red-team, merchant registration, UCP

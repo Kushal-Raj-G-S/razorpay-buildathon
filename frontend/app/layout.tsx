@@ -21,7 +21,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Warrant — the merchant's side of agentic commerce",
+  title: "Nope.ai — the merchant's side of agentic commerce",
   description: "Rules for AI agents, enforced deterministically, proven with signed receipts.",
 };
 
@@ -52,7 +52,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <nav className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
             <Link href="/" className="flex items-center gap-2.5 shrink-0">
               <SealMark className="w-6 h-6 text-accent" />
-              <span className="display text-[1.15rem] font-medium tracking-tight">Warrant</span>
+              <span className="display text-[1.15rem] font-medium tracking-tight">Nope.ai</span>
             </Link>
             <NavLinks />
           </nav>
@@ -60,7 +60,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <main className="flex-1 flex flex-col">{children}</main>
         <footer className="border-t border-border">
           <div className="max-w-6xl mx-auto px-6 py-8 flex items-center justify-between">
-            <span className="label-eyebrow">Warrant · agentic commerce, merchant-side</span>
+            <span className="label-eyebrow">Nope.ai · agentic commerce, merchant-side</span>
             <span className="label-eyebrow">Razorpay AI Buildathon 2026</span>
           </div>
         </footer>

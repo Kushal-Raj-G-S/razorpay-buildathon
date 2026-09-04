@@ -1,4 +1,4 @@
-# Warrant — frontend
+# Nope.ai — frontend
 
 Next.js 16 (App Router, Turbopack) + Tailwind v4 + framer-motion. See the
 [root README](../README.md) for what this project is.

@@ -69,7 +69,7 @@ disprove the idea:
 
 ## 4. The build
 
-> ## Warrant
+> ## Nope.ai
 > **The merchant's side of agentic commerce.**
 > Makes a Razorpay merchant shoppable by an AI buyer, evaluates every agent order against rules the
 > *merchant* wrote, and emits a signed receipt proving the agent acted within its delegated
@@ -185,7 +185,7 @@ one**."* Answer it explicitly:
 production telemetry, attackers injecting hidden instructions into aggregator sites that agents
 crawl, causing **unauthorized gift cards to be appended to the CartMandate**, delivered to an
 attacker-controlled address, **invisible to the user until the billing statement arrives**.
-→ Agent presents *valid* authority. Cart contains an appended gift card. Warrant blocks on
+→ Agent presents *valid* authority. Cart contains an appended gift card. Nope.ai blocks on
 `deny_categories: [gift_card]` and emits a receipt naming the offending line item and the rule.
 *The harm was an extra line item in a payload no human inspected — exactly what the bar defends
 against.*
@@ -228,12 +228,12 @@ is the differentiator.
 
 ## 9. The form answers
 
-**Project name:** Warrant
+**Project name:** Nope.ai
 
 **What it solves:** *An AI buyer can't shop a Razorpay merchant — there's no catalog API. And when
 an agent buys wrong, the merchant eats the chargeback with no evidence it acted within authority; no
 agentic dispute reason code exists. Every protocol lets the buyer bound the agent. None lets the
-merchant say what it will accept, or prove what it decided. Warrant is that missing half: a
+merchant say what it will accept, or prove what it decided. Nope.ai is that missing half: a
 UCP-shaped catalog so the merchant is shoppable, a deterministic policy engine enforcing rules the
 merchant wrote, and a signed decision receipt that stands up in a dispute.*
 

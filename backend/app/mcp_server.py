@@ -7,7 +7,7 @@ Protocol) tools -- the same protocol Razorpay's own official payments
 MCP server (github.com/razorpay/razorpay-mcp-server) already speaks.
 
 That means the fastest path to "any agent built inside Agent Studio can
-use Warrant" isn't a new UI or a bespoke integration -- it's exposing
+use Nope.ai" isn't a new UI or a bespoke integration -- it's exposing
 the exact same decision engine already proven in main.py as MCP tools.
 An agent-builder just adds this server the same way it would add any
 other tool, and every purchase it tries to make gets checked before it
@@ -50,7 +50,7 @@ WARRANT_MERCHANT_API_KEY = os.environ.get("WARRANT_MERCHANT_API_KEY", "")  # onl
 
 mcp = MCPServer(
     name="warrant",
-    title="Warrant — merchant-side agentic commerce trust layer",
+    title="Nope.ai — merchant-side agentic commerce trust layer",
     instructions=(
         "Use check_cart before completing ANY purchase on behalf of a user. "
         "It enforces this specific merchant's own rules -- spending limits, "
@@ -90,7 +90,7 @@ async def check_cart(
 
     items: list of {"id": str, "title": str, "price": int (paise),
     "category": str, "quantity": int}. The id should match a real
-    product in the merchant's catalog when possible -- Warrant verifies
+    product in the merchant's catalog when possible -- Nope.ai verifies
     against the merchant's own listing and will override or reject
     anything that doesn't match, regardless of what category is claimed
     here.

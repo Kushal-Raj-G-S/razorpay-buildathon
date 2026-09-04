@@ -23,7 +23,7 @@ def _hash_key(api_key: str) -> str:
 
 
 def generate_api_key() -> str:
-    return "wrk_" + secrets.token_urlsafe(32)  # "wrk" = Warrant key
+    return "wrk_" + secrets.token_urlsafe(32)  # legacy "wrk" prefix, predates the Nope.ai rename
 
 
 def require_merchant_auth(merchant_id: str, session: Session, authorization: str | None) -> None:

@@ -1,7 +1,7 @@
 """
 POST /merchants/register-with-razorpay: a merchant's own real Razorpay
-test-mode key_id/key_secret becomes their Warrant credential directly,
-instead of a second, Warrant-only API key. verify_razorpay_credentials
+test-mode key_id/key_secret becomes their Nope.ai credential directly,
+instead of a second, Nope.ai-only API key. verify_razorpay_credentials
 (the live call to Razorpay) is stubbed here, same reasoning as stubbing
 create_payment_link elsewhere in this suite -- no live network
 dependency in the test run. The live call itself is proven separately,
@@ -55,9 +55,9 @@ def test_valid_razorpay_keys_register_and_then_authenticate_merchant_actions(cli
         "razorpay_key_secret": "supersecretfake",
     })
     assert r.status_code == 200
-    assert "api_key" not in r.json()  # no separate Warrant key was ever minted
+    assert "api_key" not in r.json()  # no separate Nope.ai key was ever minted
 
-    # The merchant's own Razorpay keys, not anything Warrant generated, now authenticate them.
+    # The merchant's own Razorpay keys, not anything Nope.ai generated, now authenticate them.
     save = client.post(
         "/policy",
         headers=auth("rzp_test_fake123:supersecretfake"),

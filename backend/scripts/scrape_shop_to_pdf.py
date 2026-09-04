@@ -42,7 +42,7 @@ def _clean_for_pdf(text: str) -> str:
 
 
 def scrape_products(url: str) -> list[str]:
-    resp = requests.get(url, timeout=15, headers={"User-Agent": "WarrantCatalogBot/1.0"})
+    resp = requests.get(url, timeout=15, headers={"User-Agent": "NopeAiCatalogBot/1.0"})
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 

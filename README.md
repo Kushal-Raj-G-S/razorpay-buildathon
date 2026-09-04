@@ -1,4 +1,4 @@
-# Warrant
+# Nope.ai
 
 **The merchant's side of agentic commerce.**
 
@@ -6,7 +6,7 @@ Every agentic-commerce protocol — AP2, ACP, UCP, even UPI Reserve Pay — lets
 put a leash on an AI shopping agent. None of them let the *merchant* declare what it will
 accept, or prove afterward what it decided. Nine protocols were read at spec level
 (see [`research/06-protocols.md`](research/06-protocols.md)) and every single one refuses
-that question. Warrant is the missing half.
+that question. Nope.ai is the missing half.
 
 Built for [Razorpay's AI Buildathon 2026](https://razorpay.com/buildathon/), Track 01 —
 see [`research/`](research/) for the full evidence base and [`DECISION.md`](DECISION.md)
@@ -168,14 +168,14 @@ history for exactly this reason, not fabricated data.
 
 ## Authenticating with your own Razorpay keys, not a second credential
 
-`POST /merchants/register` mints a Warrant-only API key — simple, but it's a second
+`POST /merchants/register` mints a Nope.ai-only API key — simple, but it's a second
 credential on top of whatever Razorpay keys a merchant already has, which is exactly the
 kind of friction a real Razorpay-integrated feature shouldn't add. `POST
 /merchants/register-with-razorpay` is the alternative: hand over your real Razorpay
-test-mode `key_id`/`key_secret`, Warrant calls Razorpay with them
+test-mode `key_id`/`key_secret`, Nope.ai calls Razorpay with them
 (`razorpay_client.verify_razorpay_credentials`, one cheap `GET /payment_links?count=1`) to
 confirm they're genuine — not just shaped like a key — and if Razorpay accepts them, those
-same keys become how you authenticate to Warrant from then on
+same keys become how you authenticate to Nope.ai from then on
 (`Authorization: Bearer <key_id>:<key_secret>`). No separate credential is ever minted.
 
 Verified live against real Razorpay test-mode keys, not just mocked: registering with the

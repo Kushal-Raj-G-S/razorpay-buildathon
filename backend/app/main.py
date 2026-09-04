@@ -6,7 +6,7 @@ Endpoints, in plain words:
   GET  /.well-known/ucp          -- "here's how to talk to this shop" (industry standard discovery)
   POST /merchants/register       -- a shop owner creates their account, gets a secret key ONCE
   POST /merchants/register-with-razorpay -- same, but authenticates with the merchant's own
-                                             real Razorpay keys instead of a Warrant-only one
+                                             real Razorpay keys instead of a Nope.ai-only one
   POST /catalog                   -- upload a clean catalog directly           [merchant-only]
   POST /catalog/from-text         -- AI turns messy product text into a clean catalog [merchant-only]
   POST /catalog/from-pdf          -- same, but the input is an uploaded PDF, not pasted text [merchant-only]
@@ -100,11 +100,11 @@ from app.db import repo
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    print("Warrant is up. Database ready, signing key loaded (persistent).")
+    print("Nope.ai is up. Database ready, signing key loaded (persistent).")
     yield
 
 
-app = FastAPI(title="Warrant", description="The merchant's side of agentic commerce", lifespan=lifespan)
+app = FastAPI(title="Nope.ai", description="The merchant's side of agentic commerce", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -199,18 +199,18 @@ class MerchantRegisterWithRazorpayRequest(BaseModel):
 async def register_merchant_with_razorpay(req: MerchantRegisterWithRazorpayRequest,
                                            session: Session = Depends(get_session)):
     """
-    The alternative to POST /merchants/register: instead of Warrant
+    The alternative to POST /merchants/register: instead of Nope.ai
     minting its own separate API key -- a second credential on top of
     whatever Razorpay keys a merchant already has, which is exactly the
     kind of extra friction a real Razorpay-integrated feature shouldn't
     add -- a merchant's own real Razorpay test-mode key_id/key_secret
-    becomes their Warrant credential directly.
+    becomes their Nope.ai credential directly.
 
     We don't just check these are shaped like Razorpay keys: we call
     Razorpay with them (see razorpay_client.verify_razorpay_credentials)
     and only register if Razorpay itself accepts them. From then on,
     `Authorization: Bearer <key_id>:<key_secret>` -- the same keys,
-    never anything Warrant generated -- authenticates every merchant
+    never anything Nope.ai generated -- authenticates every merchant
     action, through the exact same require_merchant_auth check as the
     other registration path; only the source of the secret differs, not
     how it's verified.
@@ -239,7 +239,7 @@ async def register_merchant_with_razorpay(req: MerchantRegisterWithRazorpayReque
         "merchant_id": req.merchant_id,
         "note": "Verified with Razorpay. Authenticate as "
                 "'Authorization: Bearer <razorpay_key_id>:<razorpay_key_secret>' -- "
-                "the same keys you just gave us. Warrant never generated or stored a "
+                "the same keys you just gave us. Nope.ai never generated or stored a "
                 "separate credential for you.",
     }
 

@@ -26,8 +26,8 @@ async def verify_razorpay_credentials(key_id: str, key_secret: str) -> bool:
     handing us, by actually calling Razorpay with it -- not just
     checking it's shaped like a key. Used by the alternative
     registration path (see main.py's register_merchant_with_razorpay):
-    instead of Warrant minting its own separate API key, a merchant's
-    real Razorpay test-mode credentials become their Warrant credential
+    instead of Nope.ai minting its own separate API key, a merchant's
+    real Razorpay test-mode credentials become their Nope.ai credential
     directly. One cheap, read-only call (list payment links, page size
     1) is enough -- Razorpay itself rejects the request with 401 if the
     key pair is wrong, which is the only thing being checked here.
