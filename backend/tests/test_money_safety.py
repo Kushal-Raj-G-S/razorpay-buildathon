@@ -8,6 +8,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import httpx
 import pytest
 from pydantic import ValidationError
 from fastapi.testclient import TestClient
@@ -142,12 +143,18 @@ def test_a_failed_payment_leaves_the_escalation_retryable_not_stuck(client, monk
     esc_id = checkout["escalation_id"]
 
     async def _failing_create_payment_link(amount_paise: int, description: str, currency: str = "INR"):
-        raise RuntimeError("simulated Razorpay 429 -- rate limited")
+        # The real failure mode hit live, not a stand-in: httpx.HTTPStatusError
+        # from Razorpay's own raise_for_status() on a 429.
+        request = httpx.Request("POST", "https://api.razorpay.com/v1/payment_links")
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("429 Too Many Requests", request=request, response=response)
 
     monkeypatch.setattr(main_module, "create_payment_link", _failing_create_payment_link)
 
-    with pytest.raises(RuntimeError):
-        client.post(f"/escalations/{esc_id}/review", headers=auth, json={"approve": True})
+    # A typed, honest 503 -- not a bare unhandled 500 with a leaked stack trace.
+    failed = client.post(f"/escalations/{esc_id}/review", headers=auth, json={"approve": True})
+    assert failed.status_code == 503
+    assert "still pending" in failed.json()["detail"]
 
     # Still pending -- NOT stuck as "approved with no payment"
     pending = client.get("/escalations", headers=auth, params={"merchant_id": "shop_retry"}).json()

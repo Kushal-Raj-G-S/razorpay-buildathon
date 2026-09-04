@@ -253,6 +253,11 @@ Evidence that "tested hard" isn't a claim, it's a log. Worth a line in the pitch
 - **Policy AI-drafter silently dropped COD and velocity instructions** (`da88d08`) — schema
   and prompt drifted apart after India-specific fields were added; now guarded by a static
   test that fails if it happens again.
+- **Approving an escalation during a Razorpay rate-limit returned a bare 500** (found while
+  typing every endpoint's response, fixed same day) — `create_payment_link`'s
+  `raise_for_status()` wasn't caught anywhere. Now a typed 503 naming the escalation as
+  untouched and safe to retry. Verified against a genuine live 429, not just a mock — the
+  test account was still rate-limited from earlier same-day testing when this landed.
 
 Every one of these was found by actually trying to break the thing, not by reading the code
 and assuming it worked — several were found live, in a running browser, not in a test file.

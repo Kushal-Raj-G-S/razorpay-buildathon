@@ -99,15 +99,18 @@ behavior regression for the frontend (JS treats `null` and `undefined` the same 
 place these fields are read), but worth naming since it's the kind of thing that looks like
 nothing until a strict outside client checks for key presence instead of value.
 
-**A real, unrelated bug surfaced while verifying this live, not fixed here**: approving an
-escalation when Razorpay's API is rate-limited (429, which real testing traffic against a
-test-mode account hits often) returns a bare, unhandled `500 Internal Server Error` instead
-of a clean typed error response — `create_payment_link`'s `raise_for_status()` isn't caught
-anywhere in `review_escalation_endpoint`. The escalation itself stays safely pending and
-retryable (that ordering was fixed earlier — see git history), but the HTTP response the
-caller gets in that moment is an opaque 500, not something an integrator's admin panel could
-render meaningfully. Disclosed, not fixed, since it's outside what "type the endpoints" asked
-for.
+**Fixed**: approving an escalation while Razorpay's API is rate-limited (429, which real
+testing traffic against a test-mode account hits often — it happened again, for real, while
+verifying this exact fix) used to return a bare, unhandled `500 Internal Server Error` —
+`create_payment_link`'s `raise_for_status()` wasn't caught anywhere in
+`review_escalation_endpoint`. Now caught and turned into a typed `503` naming exactly what
+happened and that the escalation is untouched and safe to retry. The escalation itself was
+already safely pending and retryable before this fix (that ordering was fixed earlier — see
+git history) — only the HTTP response in that moment was opaque; now it's a clean,
+renderable error instead of a leaked stack trace. Verified twice: once against a real 429
+from Razorpay live (the test account was still rate-limited from earlier testing when this
+fix landed), confirming the escalation stayed pending afterward, and once via a mocked
+`httpx.HTTPStatusError` in `test_a_failed_payment_leaves_the_escalation_retryable_not_stuck`.
 
 ## Why no AI in the decision path
 

@@ -639,10 +639,25 @@ async def review_escalation_endpoint(escalation_id: int, req: ReviewRequest,
     # stuck in a state that claims something happened when it didn't.
     payment = None
     if req.approve:
-        payment = await create_payment_link(
-            amount_paise=existing.cart_total,
-            description=f"Order {existing.receipt_id} (human-approved) via agent {existing.agent_id}",
-        )
+        # A real 429 from Razorpay (hit live, from this project's own test
+        # traffic) used to propagate as a bare, unhandled 500 -- correct on
+        # money-safety (the escalation below is never reached, so nothing
+        # gets falsely committed) but useless to any caller, human or an
+        # integrator's admin panel, trying to render a real error. Caught
+        # here and turned into a typed, honest 503: the escalation is
+        # untouched and this exact request is safe to retry once Razorpay
+        # recovers, so say so instead of leaking a stack trace.
+        try:
+            payment = await create_payment_link(
+                amount_paise=existing.cart_total,
+                description=f"Order {existing.receipt_id} (human-approved) via agent {existing.agent_id}",
+            )
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                503,
+                f"Could not reach Razorpay to create the payment link ({e}) -- "
+                f"this escalation was NOT changed and is still pending. Safe to retry.",
+            )
 
     try:
         row = repo.review_escalation(session, escalation_id, req.approve, req.note)
