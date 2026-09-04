@@ -6,52 +6,35 @@ import {
   tryCheckout,
   revokeAgent,
   unrevokeAgent,
-  uploadCatalog,
   MERCHANT_ID,
   type Receipt,
   type CartItemInput,
-  type CatalogProduct,
 } from "@/lib/api";
 
 const AGENT_ID = "shopping-agent-007";
 
+// These reference real products from shop_123's actual scraped catalog
+// (FreshToHome, a real Razorpay merchant) -- not a synthetic demo set.
+// If the catalog gets re-scraped or re-uploaded, these ids/categories
+// need to match whatever's live, or "Clean cart" will correctly show
+// BLOCK (unlisted item) instead of ALLOW.
 const CLEAN_CART: CartItemInput[] = [
-  { id: "shirt", title: "Blue Cotton Shirt L", price: 45000, category: "clothing", quantity: 1 },
+  { id: "carrot-chopped-250g-pack", title: "Carrot Chopped (250g Pack)", price: 7300, category: "vegetables", quantity: 1 },
 ];
 
 const POISONED_CART: CartItemInput[] = [
-  { id: "shirt", title: "Blue Cotton Shirt L", price: 45000, category: "clothing", quantity: 1 },
-  { id: "giftcard", title: "Rs 2000 Gift Card", price: 200000, category: "gift_card", quantity: 1 },
+  { id: "carrot-chopped-250g-pack", title: "Carrot Chopped (250g Pack)", price: 7300, category: "vegetables", quantity: 1 },
+  { id: "premium-chicken-dressed-with-skin", title: "Premium Chicken Dressed with Skin", price: 18900, category: "meat", quantity: 1 },
 ];
 
+// A single allowed item (fish, ₹1,079 each) at a quantity that's still
+// within max_units_per_sku but pushes the order total over max_order_value.
 const OVER_LIMIT_CART: CartItemInput[] = [
-  { id: "jeans", title: "Denim Jeans 32", price: 1500000, category: "clothing", quantity: 1 },
+  { id: "black-pomfret-karutha-avoli-halwa-fish", title: "Black Pomfret (Karutha Avoli, Halwa Fish)", price: 107900, category: "fish", quantity: 6 },
 ];
 
 const COD_CART: CartItemInput[] = [
-  { id: "socks", title: "Pack of Socks", price: 40000, category: "clothing", quantity: 1 },
-];
-
-// These scenarios only make sense against a catalog that actually
-// contains these exact items -- "Clean cart" is supposed to sail
-// through, but if the merchant's real catalog doesn't have an item
-// with id "shirt", it gets correctly blocked as unlisted, which reads
-// as broken rather than as the catalog-trust defense working. This is
-// a one-click way to guarantee the four scenarios above behave as
-// advertised, regardless of whatever catalog is already saved.
-const DEMO_CATALOG: CatalogProduct[] = [
-  { id: "shirt", title: "Blue Cotton Shirt L", description: null, variants: [
-    { id: "shirt", title: "Blue Cotton Shirt L", price: 45000, category: "clothing", available: true, sku: null },
-  ] },
-  { id: "giftcard", title: "Rs 2000 Gift Card", description: null, variants: [
-    { id: "giftcard", title: "Rs 2000 Gift Card", price: 200000, category: "gift_card", available: true, sku: null },
-  ] },
-  { id: "jeans", title: "Denim Jeans 32", description: null, variants: [
-    { id: "jeans", title: "Denim Jeans 32", price: 1500000, category: "clothing", available: true, sku: null },
-  ] },
-  { id: "socks", title: "Pack of Socks", description: null, variants: [
-    { id: "socks", title: "Pack of Socks", price: 40000, category: "clothing", available: true, sku: null },
-  ] },
+  { id: "papaya-cut-250g-pack", title: "Papaya Cut (250g Pack)", price: 4800, category: "vegetables", quantity: 1 },
 ];
 
 const SCENARIOS: {
@@ -60,14 +43,14 @@ const SCENARIOS: {
   cart: CartItemInput[];
   mode: "prepaid" | "cod";
 }[] = [
-  { label: "Clean cart", sub: "Everything about it is fine", cart: CLEAN_CART, mode: "prepaid" },
+  { label: "Clean cart", sub: "A vegetable pack, everything about it is fine", cart: CLEAN_CART, mode: "prepaid" },
   {
     label: "Poisoned cart",
-    sub: "A hidden gift card sneaked in",
+    sub: "A denied-category meat item sneaked in",
     cart: POISONED_CART,
     mode: "prepaid",
   },
-  { label: "Over the limit", sub: "One item, too expensive", cart: OVER_LIMIT_CART, mode: "prepaid" },
+  { label: "Over the limit", sub: "Real fish item, but too much of it", cart: OVER_LIMIT_CART, mode: "prepaid" },
   {
     label: "Agentic COD",
     sub: "Zero payment authorization needed",
@@ -136,21 +119,6 @@ export default function DemoPage() {
   const [error, setError] = useState("");
   const [revoked, setRevoked] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
-  const [seeding, setSeeding] = useState(false);
-  const [seedMessage, setSeedMessage] = useState("");
-
-  async function seedDemoCatalog() {
-    setSeeding(true);
-    setSeedMessage("");
-    try {
-      await uploadCatalog(MERCHANT_ID, DEMO_CATALOG);
-      setSeedMessage("Demo catalog loaded — these four scenarios will now behave as described.");
-    } catch (e) {
-      setSeedMessage(`Couldn't load it: ${(e as Error).message}`);
-    } finally {
-      setSeeding(false);
-    }
-  }
 
   async function send(scenario: (typeof SCENARIOS)[number]) {
     setLoading(scenario.label);
@@ -186,26 +154,16 @@ export default function DemoPage() {
       <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Pretend you&apos;re an agent</h1>
       <p className="text-ink-muted max-w-xl leading-relaxed mb-10">
         Pick a scenario. It sends the cart to the real server exactly like a shopping agent
-        would, and the bouncer decides in real time. Make sure you&apos;ve{" "}
+        would, and the bouncer decides in real time. These scenarios use real products from{" "}
+        <a href="/catalog" className="text-accent underline underline-offset-2">
+          this merchant&apos;s actual catalog
+        </a>{" "}
+        — make sure you&apos;ve also{" "}
         <a href="/policy" className="text-accent underline underline-offset-2">
           saved rules
         </a>{" "}
         first.
       </p>
-
-      <div className="card p-5 mb-6 flex flex-wrap items-center gap-3 bg-paper-2/60">
-        <div className="flex-1 min-w-[220px]">
-          <p className="text-sm font-medium">These scenarios expect specific catalog items</p>
-          <p className="text-xs text-ink-muted mt-0.5">
-            If your own catalog doesn&apos;t have items named shirt/giftcard/jeans/socks,
-            &quot;Clean cart&quot; will correctly show BLOCK (unlisted item) instead of ALLOW.
-          </p>
-        </div>
-        <button onClick={seedDemoCatalog} disabled={seeding} className="btn btn-secondary shrink-0">
-          {seeding ? "Loading…" : "Load a matching demo catalog"}
-        </button>
-      </div>
-      {seedMessage && <p className="text-sm text-ink-muted mb-6">{seedMessage}</p>}
 
       <div className="grid sm:grid-cols-2 gap-3">
         {SCENARIOS.map((s, i) => (
