@@ -352,8 +352,9 @@ export default function PolicyPage() {
       <p className="label-eyebrow mb-3">Merchant policy</p>
       <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Your rules for AI agents</h1>
       <p className="text-ink-muted max-w-xl leading-relaxed mb-10">
-        Every order an agent tries to place is checked against this rulebook before anything
-        happens with money. Change anything, save, and it applies immediately.
+        This page is the rulebook. Every single order an AI shopping agent tries to place gets
+        checked against these rules before any money moves. Change something below, click Save,
+        and it takes effect on the very next order — no delay.
       </p>
 
       <div className="grid lg:grid-cols-[1fr_300px] gap-10 items-start">
@@ -424,7 +425,9 @@ export default function PolicyPage() {
                 setPolicy({ ...policy, max_order_value: Math.round(Number(e.target.value) * 100) })
               }
             />
-            <p className="field-hint">Any single order above this is blocked, or escalated below.</p>
+            <p className="field-hint">
+              If one order costs more than this, it&apos;s blocked outright. No exceptions.
+            </p>
           </div>
           <div>
             <label className="field-label">Escalate to human review above (₹, optional)</label>
@@ -441,8 +444,9 @@ export default function PolicyPage() {
               }
             />
             <p className="field-hint">
-              Orders above this value that pass every rule get flagged for a human instead of
-              going straight through.
+              An order under the block limit above, but over this amount, doesn&apos;t go through
+              automatically — it waits for you to approve or reject it by hand. Leave blank to
+              skip this step entirely.
             </p>
           </div>
         </Section>
@@ -493,6 +497,10 @@ export default function PolicyPage() {
               value={policy.max_units_per_sku}
               onChange={(e) => setPolicy({ ...policy, max_units_per_sku: Number(e.target.value) })}
             />
+            <p className="field-hint">
+              An agent trying to buy more than this many of the exact same item in one order gets
+              blocked, even if the total price is still under the spending limit above.
+            </p>
           </div>
         </Section>
 
@@ -501,8 +509,10 @@ export default function PolicyPage() {
             <div>
               <p className="text-sm font-medium">Allow agents to place COD orders</p>
               <p className="field-hint mt-1 max-w-sm">
-                No agentic-commerce protocol governs COD — it needs zero payment authorization to
-                place. Off by default; an agent order is prepaid unless you opt in here.
+                Cash on Delivery means no payment happens online at all — the order is confirmed
+                with zero money changing hands upfront. That makes it riskier to let an AI agent
+                place one unsupervised. Off means every agent order needs real payment first. Turn
+                this on only if you&apos;re fine with agents placing pay-later orders.
               </p>
             </div>
             <Toggle
@@ -513,6 +523,11 @@ export default function PolicyPage() {
         </Section>
 
         <Section eyebrow="Frequency" title="Velocity limit">
+          <p className="text-sm text-ink-muted -mt-2">
+            This isn&apos;t about how much one order costs — it&apos;s about how often the same
+            agent orders. If one agent places more than the number below within the time window
+            below, its next order is blocked until the window resets.
+          </p>
           <div className="flex flex-wrap gap-6">
             <div>
               <label className="field-label">Max orders per agent</label>
@@ -550,8 +565,10 @@ export default function PolicyPage() {
             <div>
               <p className="text-sm font-medium">Require every agent to sign its cart</p>
               <p className="field-hint mt-1 max-w-sm">
-                Without a valid signature, no cart can be trusted as coming from the agent it
-                claims to be.
+                Every real agent proves who it is with a digital signature — cryptographic proof
+                that can&apos;t be faked. If this is on, an order with no signature (or a fake
+                one) is blocked, no matter what&apos;s in the cart. Turn it off only for quick
+                testing, like the &quot;Try it&quot; demo page.
               </p>
             </div>
             <Toggle
@@ -583,7 +600,12 @@ export default function PolicyPage() {
       </div>
 
       <div className="lg:sticky lg:top-8">
-        <p className="label-eyebrow mb-3">Saved rules, over time</p>
+        <p className="label-eyebrow mb-1">Saved rules, over time</p>
+        <p className="text-xs text-ink-muted mb-3 max-w-[260px]">
+          Every time you click &quot;Save rules,&quot; a snapshot is kept here permanently — it
+          can never be deleted, like a paper trail. Click one to load it back into the form on the
+          left, then click Save again to make it live.
+        </p>
         {historyLoading && <p className="text-sm text-ink-muted">Loading…</p>}
         {!historyLoading && history.length === 0 && (
           <p className="text-sm text-ink-muted">
