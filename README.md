@@ -155,8 +155,8 @@ venv\Scripts\python -m uvicorn app.main:app --port 8000
 ```bash
 cd frontend
 npm install
-copy .env.local.example .env.local   # NEXT_PUBLIC_MERCHANT_API_KEY comes from
-                                      # POST /merchants/register (see below)
+copy .env.example .env.local   # NEXT_PUBLIC_MERCHANT_API_KEY comes from
+                                # POST /merchants/register (see below)
 npm run dev
 ```
 
