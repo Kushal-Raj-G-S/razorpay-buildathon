@@ -248,6 +248,42 @@ export function catalogFromText(merchantId: string, rawText: string) {
   );
 }
 
+// A real shop's actual product-list PDF, not something they have to
+// retype. Bypasses request() deliberately -- that helper always sends
+// Content-Type: application/json, but a file upload needs
+// multipart/form-data with a browser-generated boundary, which only
+// happens if we never set Content-Type ourselves and let fetch derive
+// it from the FormData body.
+export async function catalogFromPdf(merchantId: string, file: File) {
+  if (!MERCHANT_API_KEY) {
+    throw new Error(
+      "No merchant API key configured. Register via POST /merchants/register and set " +
+        "NEXT_PUBLIC_MERCHANT_API_KEY in frontend/.env.local"
+    );
+  }
+  const form = new FormData();
+  form.append("merchant_id", merchantId);
+  form.append("file", file);
+
+  const res = await fetch(`${BASE_URL}/catalog/from-pdf`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${MERCHANT_API_KEY}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const bodyText = await res.text();
+    let detail = bodyText;
+    try {
+      const parsed = JSON.parse(bodyText);
+      if (parsed && typeof parsed.detail === "string") detail = parsed.detail;
+    } catch {
+      // not JSON -- use the raw text as-is
+    }
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.json() as Promise<{ status: string; product_count: number; catalog: { products: CatalogProduct[] } }>;
+}
+
 // ---------- Escalations: the human review queue (merchant-only) ----------
 
 export type Escalation = {

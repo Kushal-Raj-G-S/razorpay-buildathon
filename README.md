@@ -77,12 +77,31 @@ column was genuinely missing beforehand, ran it, confirmed every existing mercha
 A mic button next to the plain-English box on the Rules page uses the browser's own
 Web Speech API to transcribe speech straight into the same textarea the AI drafter already
 reads — zero backend changes, since by the time text lands there it's indistinguishable from
-typing. Deliberately scoped small and safe: a bigger version of "make rules easier to set
-up" — letting a merchant hand over their website URL or a product PDF and having AI build
-the catalog from it — was considered and explicitly *not* built this close to the deadline,
-since fetching an arbitrary merchant-supplied URL opens real security questions (SSRF) that
-deserve more room than a last-minute change allows. Noted here as deliberate scope, not an
-oversight.
+typing. Found and fixed a real bug in it live: `SpeechRecognition`'s results list is
+cumulative across the whole listening session in continuous mode, so naively joining the
+whole thing on every firing re-appended everything said before each pause — say something,
+pause, say something else, and the first phrase would duplicate. Fixed using
+`event.resultIndex` to only take speech that's newly finalized since the last firing.
+
+## A real product-list PDF becomes a catalog — URL scraping deliberately not built
+
+`POST /catalog/from-pdf` reads an uploaded PDF (pypdf extracts the text, the same AI
+normalization `/catalog/from-text` already uses turns it into a clean catalog) — a real
+shop's actual price list, not something they have to retype. Verified live end to end
+against the real NVIDIA API with a genuinely generated PDF (not a mock): three products with
+realistic prices, correctly extracted, correctly converted to paise, sensibly categorized.
+
+The wider version of this idea — hand over a *website URL* and have AI crawl it — was
+explicitly **not** built. An arbitrary merchant-supplied URL is a real SSRF surface (fetch
+internal infrastructure, cloud metadata endpoints) that a file upload simply doesn't open:
+we only ever read bytes the merchant directly handed us, never make an outbound request
+based on merchant input. Noted here as a deliberate, considered scope cut, not an oversight
+— the PDF path gets the real value (a shop's actual catalog, not retyped) without the risk.
+
+Also added, same audit: the Rules page's category fields are click-to-toggle chips pulled
+from the merchant's own real catalog, not free-typed from memory — a typo in a hand-typed
+category name would silently never match anything at checkout. Free text still works for a
+category not yet in the catalog.
 
 ## Escalations: a real fraud false-positive found and fixed, plus history
 
@@ -252,7 +271,7 @@ curl -X POST http://127.0.0.1:8000/merchants/register -H "Content-Type: applicat
 # copy the returned api_key into frontend/.env.local as NEXT_PUBLIC_MERCHANT_API_KEY
 ```
 
-**Tests:** `cd backend && pytest -q` — 66 passing, no network dependency (Razorpay calls
+**Tests:** `cd backend && pytest -q` — 70 passing, no network dependency (Razorpay calls
 and AI narration are stubbed in the test suite; the real integrations are proven
 separately, live, in git history).
 

@@ -9,6 +9,7 @@ Endpoints, in plain words:
                                              real Razorpay keys instead of a Warrant-only one
   POST /catalog                   -- upload a clean catalog directly           [merchant-only]
   POST /catalog/from-text         -- AI turns messy product text into a clean catalog [merchant-only]
+  POST /catalog/from-pdf          -- same, but the input is an uploaded PDF, not pasted text [merchant-only]
   POST /catalog/search            -- "what do you sell?"                       [public -- agents need this]
   POST /policy                    -- shop owner saves their rules directly     [merchant-only]
   POST /policy/draft-from-text    -- AI drafts rules from plain English        [merchant-only, does NOT save]
@@ -64,9 +65,11 @@ import time
 import httpx
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
-from fastapi import FastAPI, HTTPException, Depends, Header
+from io import BytesIO
+from fastapi import FastAPI, HTTPException, Depends, Header, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pypdf import PdfReader
 from sqlmodel import Session
 
 from app.models.cart import Cart, CartItem
@@ -261,6 +264,31 @@ class CatalogFromTextRequest(BaseModel):
     raw_text: str   # e.g. one messy product per line, however the shop owner typed it
 
 
+async def _catalog_from_raw_text(session: Session, merchant_id: str, raw_text: str) -> Catalog:
+    """Shared by /catalog/from-text and /catalog/from-pdf -- both end up
+    with the same thing, messy text describing products, and go through
+    the identical AI normalization and save. A PDF is just a different
+    way to arrive at that same raw text."""
+    raw_products = await ai_client.normalize_catalog_text(raw_text)
+    products = [
+        Product(
+            id=p["id"],
+            title=p["title"],
+            variants=[Variant(
+                id=p["id"],
+                title=p["title"],
+                price=round(float(p["price_rupees"]) * 100),
+                category=p.get("category"),
+                sku=p.get("sku"),
+            )],
+        )
+        for p in raw_products
+    ]
+    catalog = Catalog(merchant_id=merchant_id, products=products)
+    repo.save_catalog(session, catalog)
+    return catalog
+
+
 @app.post("/catalog/from-text", response_model=CatalogFromTextResponse)
 async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depends(get_session),
                              authorization: str | None = Header(None)):
@@ -276,24 +304,58 @@ async def catalog_from_text(req: CatalogFromTextRequest, session: Session = Depe
     if not ai_client.is_configured():
         raise HTTPException(503, "AI not configured -- set NVIDIA_API_KEY in backend/.env")
 
-    raw_products = await ai_client.normalize_catalog_text(req.raw_text)
-    products = [
-        Product(
-            id=p["id"],
-            title=p["title"],
-            variants=[Variant(
-                id=p["id"],
-                title=p["title"],
-                price=round(float(p["price_rupees"]) * 100),
-                category=p.get("category"),
-                sku=p.get("sku"),
-            )],
+    catalog = await _catalog_from_raw_text(session, req.merchant_id, req.raw_text)
+    return {"status": "saved", "product_count": len(catalog.products), "catalog": catalog}
+
+
+MAX_PDF_BYTES = 10 * 1024 * 1024  # 10MB -- a real product-list PDF is small; a bigger one is
+                                  # more likely a mistake (or someone testing limits) than a
+                                  # catalog, and a huge one would blow past what's sane to
+                                  # send an LLM in one call anyway.
+
+
+@app.post("/catalog/from-pdf", response_model=CatalogFromTextResponse)
+async def catalog_from_pdf(merchant_id: str = Form(...), file: UploadFile = File(...),
+                            session: Session = Depends(get_session),
+                            authorization: str | None = Header(None)):
+    """
+    Same AI normalization as /catalog/from-text, but the messy input is a
+    PDF product list/catalog document instead of pasted text -- a real
+    shop's actual price list, not something they have to retype. A file
+    upload was chosen deliberately over letting a merchant hand us a URL
+    to fetch: an arbitrary merchant-supplied URL is a real SSRF surface
+    (fetch internal infrastructure, cloud metadata endpoints, etc.) that
+    a file upload simply doesn't open -- we only ever read bytes the
+    merchant directly handed us, we never make an outbound request based
+    on merchant input.
+    """
+    _auth(merchant_id, session, authorization)
+
+    if not ai_client.is_configured():
+        raise HTTPException(503, "AI not configured -- set NVIDIA_API_KEY in backend/.env")
+
+    if file.content_type not in ("application/pdf", "application/x-pdf"):
+        raise HTTPException(400, f"expected a PDF file, got content-type '{file.content_type}'")
+
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) > MAX_PDF_BYTES:
+        raise HTTPException(413, f"PDF too large ({len(pdf_bytes)} bytes, max {MAX_PDF_BYTES})")
+
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+        raw_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    except Exception as e:
+        raise HTTPException(400, f"could not read this PDF: {e}")
+
+    if not raw_text.strip():
+        raise HTTPException(
+            400,
+            "couldn't extract any text from this PDF -- it may be scanned images rather than "
+            "real text, which isn't supported yet",
         )
-        for p in raw_products
-    ]
-    catalog = Catalog(merchant_id=req.merchant_id, products=products)
-    repo.save_catalog(session, catalog)
-    return {"status": "saved", "product_count": len(products), "catalog": catalog}
+
+    catalog = await _catalog_from_raw_text(session, merchant_id, raw_text)
+    return {"status": "saved", "product_count": len(catalog.products), "catalog": catalog}
 
 
 @app.post("/catalog/search", response_model=CatalogSearchResponse)

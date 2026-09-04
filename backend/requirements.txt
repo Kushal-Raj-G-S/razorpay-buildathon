@@ -9,3 +9,6 @@ python-dotenv
 sqlmodel
 psycopg2-binary
 mcp
+pypdf
+python-multipart
+fpdf2  # test-only: generates a real PDF in test_catalog_from_pdf.py, not used at runtime

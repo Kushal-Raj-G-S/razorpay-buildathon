@@ -7,6 +7,7 @@ import {
   savePolicy,
   draftPolicyFromText,
   getPolicyHistory,
+  searchCatalog,
   MERCHANT_ID,
   type Policy,
   type PolicyHistoryEntry,
@@ -91,6 +92,7 @@ export default function PolicyPage() {
   const [policy, setPolicy] = useState<Policy>(DEFAULT_POLICY);
   const [categoriesText, setCategoriesText] = useState(DEFAULT_POLICY.deny_categories.join(", "));
   const [allowCategoriesText, setAllowCategoriesText] = useState(DEFAULT_POLICY.allow_categories.join(", "));
+  const [knownCategories, setKnownCategories] = useState<string[]>([]);
   const [status, setStatus] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [plainEnglish, setPlainEnglish] = useState("");
@@ -169,7 +171,33 @@ export default function PolicyPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
     loadHistory();
+
+    // Categories are whatever's actually in the merchant's own catalog --
+    // pulling them from there means picking from a real list instead of
+    // typing a category name from memory and hoping it matches exactly
+    // what the catalog uses (a typo here would silently never match
+    // anything at checkout).
+    searchCatalog(MERCHANT_ID)
+      .then((res) => {
+        const cats = new Set(
+          res.products.flatMap((p) => p.variants.map((v) => v.category).filter((c): c is string => !!c))
+        );
+        setKnownCategories([...cats].sort());
+      })
+      .catch(() => {});
   }, []);
+
+  function toggleCategory(
+    text: string,
+    setText: (v: string) => void,
+    category: string
+  ) {
+    const current = text.split(",").map((c) => c.trim()).filter(Boolean);
+    const next = current.includes(category)
+      ? current.filter((c) => c !== category)
+      : [...current, category];
+    setText(next.join(", "));
+  }
 
   async function handleSave() {
     setStatus("saving…");
@@ -326,6 +354,23 @@ export default function PolicyPage() {
         <Section eyebrow="Catalog" title="What's banned">
           <div>
             <label className="field-label">Banned categories (comma separated)</label>
+            {knownCategories.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {knownCategories.map((cat) => {
+                  const active = categoriesText.split(",").map((c) => c.trim()).includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleCategory(categoriesText, setCategoriesText, cat)}
+                      className={`badge text-xs cursor-pointer ${active ? "badge-block" : "badge-neutral"}`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <input
               type="text"
               className="field-input"
@@ -333,10 +378,30 @@ export default function PolicyPage() {
               onChange={(e) => setCategoriesText(e.target.value)}
               placeholder="gift_card, clearance"
             />
-            <p className="field-hint">An order containing any of these categories is blocked outright.</p>
+            <p className="field-hint">
+              An order containing any of these categories is blocked outright.
+              {knownCategories.length > 0 && " Click a category above, or type your own."}
+            </p>
           </div>
           <div>
             <label className="field-label">Allowed categories only (comma separated, optional)</label>
+            {knownCategories.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {knownCategories.map((cat) => {
+                  const active = allowCategoriesText.split(",").map((c) => c.trim()).includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => toggleCategory(allowCategoriesText, setAllowCategoriesText, cat)}
+                      className={`badge text-xs cursor-pointer ${active ? "badge-allow" : "badge-neutral"}`}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <input
               type="text"
               className="field-input"

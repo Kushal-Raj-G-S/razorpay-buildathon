@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { catalogFromText, searchCatalog, MERCHANT_ID, type CatalogProduct } from "@/lib/api";
+import { catalogFromText, catalogFromPdf, searchCatalog, MERCHANT_ID, type CatalogProduct } from "@/lib/api";
 import { staggerParent, staggerChild } from "@/components/Reveal";
 
 const EXAMPLE = `Blue Tshirt L 499/-
@@ -17,6 +17,8 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [checkingExisting, setCheckingExisting] = useState(true);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
   // Reloading this page used to always show a blank form, even if a
   // catalog was already saved -- there was no way to tell one existed
@@ -44,6 +46,22 @@ export default function CatalogPage() {
     }
   }
 
+  async function handlePdfUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file next time
+    if (!file) return;
+    setPdfLoading(true);
+    setPdfError("");
+    try {
+      const result = await catalogFromPdf(MERCHANT_ID, file);
+      setProducts(result.catalog.products);
+    } catch (err) {
+      setPdfError((err as Error).message);
+    } finally {
+      setPdfLoading(false);
+    }
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-16 sm:py-20">
       <p className="label-eyebrow mb-3">Catalog</p>
@@ -68,6 +86,25 @@ export default function CatalogPage() {
           </button>
           {error && <p className="text-sm text-danger">{error}</p>}
         </div>
+      </div>
+
+      <div className="card p-7 mb-8 bg-paper-2/60">
+        <label className="field-label">Or upload your real product list as a PDF</label>
+        <p className="field-hint mb-3 mt-0">
+          Same AI reading, just from your actual price list instead of retyping it. Needs a
+          real text layer — a scanned photo saved as PDF won&apos;t have one.
+        </p>
+        <label className="btn btn-secondary inline-flex cursor-pointer">
+          {pdfLoading ? "Reading your PDF…" : "Choose a PDF"}
+          <input
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            disabled={pdfLoading}
+            onChange={handlePdfUpload}
+          />
+        </label>
+        {pdfError && <p className="text-sm text-danger mt-2">{pdfError}</p>}
       </div>
 
       {checkingExisting && <p className="label-eyebrow">Checking your saved catalog…</p>}
