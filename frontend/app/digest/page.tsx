@@ -38,6 +38,19 @@ const DECISION_BADGE: Record<string, string> = {
   escalate: "badge-escalate",
 };
 
+// Same plain-English mapping used on Demo and Receipts -- a reader
+// shouldn't need to know what "cod_allowed" means to follow this page.
+const RULE_LABELS: Record<string, string> = {
+  items_are_listed: "Does the shop actually sell this?",
+  max_order_value: "Is the order under the spending limit?",
+  deny_categories: "Is anything in a banned category?",
+  allow_categories: "Is everything in an allowed category?",
+  max_units_per_sku: "Is the quantity reasonable?",
+  cod_allowed: "Is pay-on-delivery switched on for agents?",
+  identity_verified: "Do we know which agent this really is?",
+  velocity: "Has this agent ordered too many times recently?",
+};
+
 const AGENTS_PER_PAGE = 10;
 
 export default function DigestPage() {
@@ -169,9 +182,12 @@ export default function DigestPage() {
       <p className="label-eyebrow mb-3">What's actually been happening</p>
       <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Digest</h1>
       <p className="text-ink-muted max-w-xl leading-relaxed mb-8">
-        Not a log to read line by line — a summary. Every flag below is decided by the same
-        fixed code that runs at checkout, before any AI ever sees it. If AI is configured, it
-        only translates those already-decided facts into plain language.
+        Receipts show you one order at a time. This page zooms out: for the time window you pick
+        below, it shows every agent that has tried to order from you, how many times each one was
+        let through or blocked, and any behavior worth noticing — like one agent getting blocked
+        again and again. Every number here comes from the same fixed rule-checking code as
+        checkout itself, not a guess — if AI is available, it only explains those numbers in
+        plain language, it never invents them.
       </p>
 
       <div className="flex items-center gap-2 mb-8">
@@ -406,7 +422,10 @@ export default function DigestPage() {
                                           </p>
                                           {failedRules.map((rc) => (
                                             <p key={rc.rule_name} className="text-xs text-danger">
-                                              <span className="font-medium">{rc.rule_name}:</span> {rc.detail}
+                                              <span className="font-medium">
+                                                {RULE_LABELS[rc.rule_name] ?? rc.rule_name}:
+                                              </span>{" "}
+                                              {rc.detail}
                                             </p>
                                           ))}
                                         </div>
@@ -439,8 +458,8 @@ export default function DigestPage() {
                     <thead>
                       <tr className="border-b border-border text-left text-ink-faint">
                         <th className="px-4 py-2.5 font-normal text-xs">Agent</th>
-                        <th className="px-4 py-2.5 font-normal text-xs">A</th>
-                        <th className="px-4 py-2.5 font-normal text-xs">Bl</th>
+                        <th className="px-4 py-2.5 font-normal text-xs" title="Orders allowed">Allowed</th>
+                        <th className="px-4 py-2.5 font-normal text-xs" title="Orders blocked">Blocked</th>
                         <th className="px-4 py-2.5 font-normal text-xs">Access</th>
                       </tr>
                     </thead>
