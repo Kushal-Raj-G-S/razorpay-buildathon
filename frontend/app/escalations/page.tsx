@@ -116,8 +116,11 @@ export default function EscalationsPage() {
       <p className="label-eyebrow mb-3">Human review</p>
       <h1 className="display text-3xl sm:text-4xl font-medium mb-3">Orders waiting for you</h1>
       <p className="text-ink-muted max-w-xl leading-relaxed mb-6">
-        Every rule passed on these — they were just too big to auto-approve. Nothing happens with
-        money until you decide. Approving creates a real Razorpay payment link right here.
+        These orders passed every single rule — they were only stopped because of their size. The
+        shop owner said orders this big need a human&apos;s yes before anything happens.
+        Approving creates a real Razorpay payment link right here; rejecting creates nothing. If
+        Razorpay itself can&apos;t be reached when you approve, the order stays safely pending —
+        nothing is lost, just try again.
       </p>
 
       <div className="flex items-center gap-2 mb-8">
@@ -162,12 +165,12 @@ export default function EscalationsPage() {
       {!loading && tab === "pending" && pending.length === 0 && (
         <div className="card p-10 text-center">
           <p className="text-sm text-ink-muted">
-            Nothing pending. Try an order between your escalate-above value and your max order
-            value on{" "}
+            Nothing waiting right now. Go to{" "}
             <a href="/demo" className="text-accent underline underline-offset-2">
-              the try-it page
-            </a>
-            .
+              Try it
+            </a>{" "}
+            and click &quot;Needs human review&quot; — that scenario is sized to land exactly in
+            this queue.
           </p>
         </div>
       )}

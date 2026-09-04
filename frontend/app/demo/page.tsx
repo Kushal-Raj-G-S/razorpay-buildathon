@@ -37,11 +37,19 @@ const COD_CART: CartItemInput[] = [
   { id: "papaya-cut-250g-pack", title: "Papaya Cut (250g Pack)", price: 4800, category: "vegetables", quantity: 1 },
 ];
 
+// Every rule passes here -- the only thing special about this cart is its
+// size: above the merchant's escalate_above but still under max_order_value.
+// Nothing else in these scenarios ever lands in that band, so without this
+// one the Review queue page would always look empty.
+const ESCALATE_CART: CartItemInput[] = [
+  { id: "black-pomfret-karutha-avoli-halwa-fish", title: "Black Pomfret (Karutha Avoli, Halwa Fish)", price: 107900, category: "fish", quantity: 5 },
+];
+
 const SCENARIOS: {
   label: string;
   order: string;
   sub: string;
-  expect: "ALLOW" | "BLOCK";
+  expect: "ALLOW" | "BLOCK" | "ESCALATE";
   cart: CartItemInput[];
   mode: "prepaid" | "cod";
 }[] = [
@@ -76,6 +84,14 @@ const SCENARIOS: {
     expect: "ALLOW",
     cart: COD_CART,
     mode: "cod",
+  },
+  {
+    label: "Needs human review",
+    order: "Order: 5 packs of Black Pomfret fish, ₹5,395",
+    sub: "Nothing wrong with this order at all — but it's a big one. The shop owner said orders this size should wait for a human to say yes, instead of going through automatically.",
+    expect: "ESCALATE",
+    cart: ESCALATE_CART,
+    mode: "prepaid",
   },
 ];
 
@@ -224,7 +240,9 @@ export default function DemoPage() {
               <p className="text-sm font-medium">
                 {loading === s.label ? "Sending…" : s.label}
               </p>
-              <span className={`badge ${DECISION_BADGE[s.expect === "ALLOW" ? "allow" : "block"]} text-[0.68rem] px-2 py-0.5 shrink-0`}>
+              <span
+                className={`badge ${DECISION_BADGE[s.expect === "ALLOW" ? "allow" : s.expect === "BLOCK" ? "block" : "escalate"]} text-[0.68rem] px-2 py-0.5 shrink-0`}
+              >
                 expect {s.expect}
               </span>
             </div>
