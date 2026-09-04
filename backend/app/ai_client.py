@@ -36,7 +36,10 @@ async def _chat_json(system_prompt: str, user_prompt: str) -> dict:
     if not is_configured():
         raise RuntimeError("NVIDIA_API_KEY not configured -- see backend/.env.example")
 
-    async with httpx.AsyncClient(timeout=120) as client:
+    # NVIDIA's latency for this model has been observed anywhere from ~3s to
+    # ~100s on identical prompts (checked live, not assumed) -- 120s was
+    # occasionally too tight for the red-team endpoint's multi-round calls.
+    async with httpx.AsyncClient(timeout=240) as client:
         response = await client.post(
             f"{NVIDIA_BASE_URL}/chat/completions",
             headers={"Authorization": f"Bearer {NVIDIA_API_KEY}"},
