@@ -62,10 +62,11 @@ Don't read this verbatim — read it twice, then say it in your own words. Pause
 
 > So I built the missing half. It's called Warrant.
 >
-> It does four things. It turns a merchant's messy product data into a UCP-shaped catalog, so they're
-> shoppable — filling the primitive Razorpay doesn't have. It evaluates every agent order against
-> rules the *merchant* wrote. It emits a signed receipt proving what was decided and why. And it can
-> revoke an agent's authority mid-flight — which AP2, ACP, x402 and Web Bot Auth all leave undefined.
+> It does four things. It turns a merchant's messy product data — pasted text, or their real
+> price-list PDF — into a UCP-shaped catalog, so they're shoppable, filling the primitive Razorpay
+> doesn't have. It evaluates every agent order against rules the *merchant* wrote. It emits a signed
+> receipt proving what was decided and why. And it can revoke an agent's authority mid-flight — which
+> AP2, ACP, x402 and Web Bot Auth all leave undefined.
 >
 > *[show the rules editor, then a receipt]*
 
@@ -234,6 +235,25 @@ land; it's a reference list, not something to read aloud.
 - **Docker, verified twice for real** (`fdd4f88`/`adca20e`, `2992606`) — one-command boot of
   both services, containers actually built and run (not just written), including a restart
   to prove SQLite data survives.
+- **Catalog from a real PDF, plus a scraper that feeds it** (`369a432`, `d469969`) — a merchant
+  can upload their actual price-list PDF instead of retyping it (`pypdf` extraction, same AI
+  normalization as pasted text). Deliberately did *not* let a merchant paste an arbitrary URL for
+  the backend to fetch — that's a live SSRF vector at request time. Instead built
+  `scripts/scrape_shop_to_pdf.py`, an operator-run tool: point it at a real shop's product page,
+  it scrapes the listing and writes a PDF, which then goes through the exact same
+  `/catalog/from-pdf` upload path. Verified live end-to-end against a real site
+  (books.toscrape.com), 20 real products scraped, normalized, and saved with correct rupee
+  conversion.
+- **Typeable category picker + allow-listing** (`4aa89d4`, `3bdb2c2`) — categories in the policy
+  editor are a real combobox sourced from the merchant's own catalog data, not free text. Added
+  `allow_categories` alongside the existing `deny_categories` — Amazon can't deny-list every
+  category it *doesn't* sell, so a whitelist mode exists for merchants with catalogs too big to
+  ban item-by-item. Client-side validation blocks saving a category into both lists at once; both
+  lists empty is left as a valid, unrestricted state on purpose.
+- **Speak your rules instead of typing them** (`4aa89d4`, dedup fix `369a432`) — Web Speech API in
+  the rules editor, no backend involvement. Found and fixed live: continuous-mode speech
+  recognition re-sends already-finalized phrases on every result event, causing visible text
+  duplication after a pause; fixed with `resultIndex`-based incremental extraction.
 
 ### Real bugs found and fixed — this is itself pitch material
 
