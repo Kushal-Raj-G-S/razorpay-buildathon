@@ -18,33 +18,60 @@ import requests
 from bs4 import BeautifulSoup
 from fpdf import FPDF
 
+MAX_PRODUCTS = 25
+
+# Each entry is (container_selector, title_selector, price_selector). The
+# first one whose container_selector matches anything on the page is used --
+# real shops differ in markup, this isn't one universal selector.
+SITE_PATTERNS = [
+    (".product-block", ".product-name", ".price-box .price"),  # Magento-based shops
+    ("article.product_pod", "h3 a", "p.price_color"),  # books.toscrape.com
+]
+
+
+def _clean_for_pdf(text: str) -> str:
+    # Core PDF fonts (Helvetica) only encode latin-1 -- strip anything outside
+    # that (e.g. regional-language product names) rather than crash the PDF
+    # writer on a glyph it can't draw.
+    return text.encode("latin-1", errors="ignore").decode("latin-1").strip()
+
 
 def scrape_products(url: str) -> list[str]:
     resp = requests.get(url, timeout=15, headers={"User-Agent": "WarrantCatalogBot/1.0"})
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
 
-    lines = []
-    for article in soup.select("article.product_pod"):
-        title_el = article.select_one("h3 a")
-        price_el = article.select_one("p.price_color")
-        if not title_el or not price_el:
+    for container_sel, title_sel, price_sel in SITE_PATTERNS:
+        containers = soup.select(container_sel)
+        if not containers:
             continue
-        title = title_el.get("title", title_el.text).strip()
-        # Core PDF fonts (Helvetica) can't encode the £ glyph -- swap it for
-        # "GBP " so the price still reads clearly in the generated PDF.
-        price = price_el.text.strip().replace("£", "GBP ")
-        lines.append(f"{title} - {price}")
 
-    return lines
+        lines: list[str] = []
+        seen: set[str] = set()
+        for container in containers:
+            title_el = container.select_one(title_sel)
+            price_el = container.select_one(price_sel)
+            if not title_el or not price_el:
+                continue
+            title = _clean_for_pdf(title_el.get("title", title_el.text))
+            price = _clean_for_pdf(price_el.text.replace("£", "GBP "))
+            if not title or not price or title in seen:
+                continue
+            seen.add(title)
+            lines.append(f"{title} - {price}")
+            if len(lines) >= MAX_PRODUCTS:
+                break
+        return lines
+
+    return []
 
 
 def write_pdf(lines: list[str], out_path: str) -> None:
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", size=12)
+    pdf.set_font("Helvetica", size=11)
     for line in lines:
-        pdf.cell(0, 10, text=line, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 8, text=line, new_x="LMARGIN", new_y="NEXT")
     pdf.output(out_path)
 
 
@@ -56,7 +83,8 @@ def main() -> None:
     url, out_path = sys.argv[1], sys.argv[2]
     lines = scrape_products(url)
     if not lines:
-        print("No products found on that page -- check the selector matches this site's HTML.")
+        print("No products found on that page -- add a (container, title, price) "
+              "selector triple to SITE_PATTERNS that matches this site's HTML.")
         sys.exit(1)
 
     write_pdf(lines, out_path)
