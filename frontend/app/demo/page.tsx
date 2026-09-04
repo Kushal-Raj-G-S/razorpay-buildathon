@@ -39,6 +39,7 @@ const COD_CART: CartItemInput[] = [
 
 const SCENARIOS: {
   label: string;
+  order: string;
   sub: string;
   expect: "ALLOW" | "BLOCK";
   cart: CartItemInput[];
@@ -46,28 +47,32 @@ const SCENARIOS: {
 }[] = [
   {
     label: "Clean cart",
-    sub: "\"Clean\" = a normal, legitimate order — not \"empty the cart.\" Just a real vegetable pack, nothing wrong with it.",
+    order: "Order: 1 pack of Carrot Chopped, ₹73",
+    sub: "A normal order. Nothing wrong with it at all. This should be allowed.",
     expect: "ALLOW",
     cart: CLEAN_CART,
     mode: "prepaid",
   },
   {
     label: "Poisoned cart",
-    sub: "A real vegetable item, plus a denied-category meat item quietly added alongside it — like an attacker slipping an extra item into an agent's cart.",
+    order: "Order: 1 Carrot pack + 1 Chicken item, ₹262",
+    sub: "One normal item, plus one item the shop owner banned, hidden in the same order. This should be blocked.",
     expect: "BLOCK",
     cart: POISONED_CART,
     mode: "prepaid",
   },
   {
     label: "Over the limit",
-    sub: "One perfectly allowed real fish item — just 6 of it, enough to push the order total past this merchant's spending cap.",
+    order: "Order: 6 packs of Black Pomfret fish, ₹6,474",
+    sub: "The item itself is allowed. But buying 6 of it costs more than the shop owner's spending limit. This should be blocked.",
     expect: "BLOCK",
     cart: OVER_LIMIT_CART,
     mode: "prepaid",
   },
   {
     label: "Agentic COD",
-    sub: "An agent checking out with Cash on Delivery — no upfront payment authorization at all, only allowed because this merchant explicitly opted in.",
+    order: "Order: 1 pack of Papaya Cut, ₹48, paid on delivery",
+    sub: "No online payment right now — pay when it arrives. Allowed because the shop owner switched this on. This should be allowed.",
     expect: "ALLOW",
     cart: COD_CART,
     mode: "cod",
@@ -80,6 +85,26 @@ const DECISION_BADGE: Record<Receipt["decision"], string> = {
   escalate: "badge-escalate",
 };
 
+const DECISION_EXPLAIN: Record<Receipt["decision"], string> = {
+  allow: "APPROVED — every rule the shop owner set was satisfied.",
+  block: "REJECTED — this order broke at least one rule the shop owner set.",
+  escalate: "PAUSED — this order needs a human at the shop to check it before it goes through.",
+};
+
+// The backend names each check in code (snake_case). These are the same
+// checks, said in plain words, so a viewer doesn't need to know what
+// "cod_allowed" means to follow along.
+const RULE_LABELS: Record<string, string> = {
+  items_are_listed: "Does the shop actually sell this?",
+  max_order_value: "Is the order under the spending limit?",
+  deny_categories: "Is anything in a banned category?",
+  allow_categories: "Is everything in an allowed category?",
+  max_units_per_sku: "Is the quantity reasonable?",
+  cod_allowed: "Is pay-on-delivery switched on for agents?",
+  identity_verified: "Do we know which agent this really is?",
+  velocity: "Has this agent ordered too many times recently?",
+};
+
 function ReceiptCard({ receipt }: { receipt: Receipt }) {
   return (
     <motion.div
@@ -89,7 +114,7 @@ function ReceiptCard({ receipt }: { receipt: Receipt }) {
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className="card p-7 mt-8"
     >
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between mb-2">
         <motion.span
           key={receipt.decision + receipt.timestamp}
           initial={{ opacity: 0, scale: 1.7, rotate: -10 }}
@@ -101,6 +126,7 @@ function ReceiptCard({ receipt }: { receipt: Receipt }) {
         </motion.span>
         <span className="mono-num text-sm text-ink-muted">₹{(receipt.cart_total / 100).toFixed(2)}</span>
       </div>
+      <p className="text-sm font-medium mb-5">{DECISION_EXPLAIN[receipt.decision]}</p>
       <div className="space-y-2.5 mb-5">
         {receipt.rules_checked.map((r, i) => (
           <motion.div
@@ -111,17 +137,19 @@ function ReceiptCard({ receipt }: { receipt: Receipt }) {
             className="flex items-start gap-2.5 text-sm"
           >
             <span
-              className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${r.passed ? "bg-accent" : "bg-danger"}`}
-            />
+              className={`mt-0.5 h-4 w-4 rounded-full shrink-0 flex items-center justify-center text-[0.6rem] font-bold ${r.passed ? "bg-accent/20 text-accent" : "bg-danger/20 text-danger"}`}
+            >
+              {r.passed ? "✓" : "✕"}
+            </span>
             <span>
-              <span className="font-medium">{r.rule_name}</span>
+              <span className="font-medium">{RULE_LABELS[r.rule_name] ?? r.rule_name}</span>
               <span className="text-ink-muted"> — {r.detail}</span>
             </span>
           </motion.div>
         ))}
       </div>
       <div className="pt-4 border-t border-border">
-        <p className="label-eyebrow mb-1">Signature</p>
+        <p className="label-eyebrow mb-1">Signature — proof this decision can't be faked or changed later</p>
         <p className="mono-num text-xs text-ink-faint break-all">{receipt.signature}</p>
       </div>
     </motion.div>
@@ -200,6 +228,7 @@ export default function DemoPage() {
                 expect {s.expect}
               </span>
             </div>
+            <p className="text-xs mono-num text-ink-faint mb-1.5">{s.order}</p>
             <p className="text-xs text-ink-muted">{s.sub}</p>
           </motion.button>
         ))}
