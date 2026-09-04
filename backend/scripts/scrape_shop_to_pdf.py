@@ -9,7 +9,12 @@ and the output feeds into the already-built /catalog/from-pdf upload path
 like any other PDF a merchant might hand us.
 
 Usage:
-    venv/Scripts/python scripts/scrape_shop_to_pdf.py <url> <output.pdf>
+    venv/Scripts/python scripts/scrape_shop_to_pdf.py <url> [url2 ...] <output.pdf>
+
+Multiple URLs are useful for one shop whose categories live on separate
+listing pages (e.g. /fish, /mutton, /vegetables) -- each is scraped and
+capped separately, then merged into one PDF so the resulting catalog has
+more than one real category to write policy rules against.
 """
 
 import sys
@@ -18,7 +23,7 @@ import requests
 from bs4 import BeautifulSoup
 from fpdf import FPDF
 
-MAX_PRODUCTS = 25
+MAX_PRODUCTS_PER_PAGE = 6
 
 # Each entry is (container_selector, title_selector, price_selector). The
 # first one whose container_selector matches anything on the page is used --
@@ -59,7 +64,7 @@ def scrape_products(url: str) -> list[str]:
                 continue
             seen.add(title)
             lines.append(f"{title} - {price}")
-            if len(lines) >= MAX_PRODUCTS:
+            if len(lines) >= MAX_PRODUCTS_PER_PAGE:
                 break
         return lines
 
@@ -76,19 +81,27 @@ def write_pdf(lines: list[str], out_path: str) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) != 3:
-        print("Usage: scrape_shop_to_pdf.py <url> <output.pdf>")
+    if len(sys.argv) < 3:
+        print("Usage: scrape_shop_to_pdf.py <url> [url2 ...] <output.pdf>")
         sys.exit(1)
 
-    url, out_path = sys.argv[1], sys.argv[2]
-    lines = scrape_products(url)
-    if not lines:
-        print("No products found on that page -- add a (container, title, price) "
-              "selector triple to SITE_PATTERNS that matches this site's HTML.")
+    *urls, out_path = sys.argv[1:]
+    all_lines: list[str] = []
+    for url in urls:
+        lines = scrape_products(url)
+        if not lines:
+            print(f"No products found on {url} -- skipping "
+                  "(add a matching selector triple to SITE_PATTERNS if this is unexpected).")
+            continue
+        print(f"{url}: {len(lines)} products")
+        all_lines.extend(lines)
+
+    if not all_lines:
+        print("No products found on any of the given pages.")
         sys.exit(1)
 
-    write_pdf(lines, out_path)
-    print(f"Wrote {len(lines)} products to {out_path}")
+    write_pdf(all_lines, out_path)
+    print(f"Wrote {len(all_lines)} products total to {out_path}")
 
 
 if __name__ == "__main__":
