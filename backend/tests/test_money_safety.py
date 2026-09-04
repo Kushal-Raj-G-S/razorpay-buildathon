@@ -165,3 +165,45 @@ def test_a_failed_payment_leaves_the_escalation_retryable_not_stuck(client, monk
     retry = client.post(f"/escalations/{esc_id}/review", headers=auth, json={"approve": True})
     assert retry.status_code == 200
     assert retry.json()["escalation"]["status"] == "approved"
+
+
+def test_an_allowed_checkout_degrades_gracefully_when_razorpay_fails(client, monkeypatch):
+    """
+    The same bug class as the escalation one above, found in a different
+    endpoint while doing a genuine fresh-clone end-to-end walkthrough:
+    checkout()'s create_payment_link call for an ALLOW decision had no
+    try/except either, so a real Razorpay 429 crashed a request whose
+    actual decision (the receipt, signed and already saved) had already
+    succeeded -- unlike the escalation case, there's nothing left
+    "pending" here to protect, the decision is simply final. The fix
+    returns 200 with the real receipt, payment omitted, and a plain-
+    language note -- not a 500 that hides a decision that already happened.
+    """
+    key = client.post("/merchants/register", json={"merchant_id": "shop_checkout_degrade"}).json()["api_key"]
+    auth = {"Authorization": f"Bearer {key}"}
+    client.post("/policy", headers=auth, json={
+        "merchant_id": "shop_checkout_degrade", "max_order_value": 1000000,
+        "deny_categories": [], "require_signed_identity": False,
+    })
+
+    async def _failing_create_payment_link(amount_paise: int, description: str, currency: str = "INR"):
+        request = httpx.Request("POST", "https://api.razorpay.com/v1/payment_links")
+        response = httpx.Response(429, request=request)
+        raise httpx.HTTPStatusError("429 Too Many Requests", request=request, response=response)
+
+    monkeypatch.setattr(main_module, "create_payment_link", _failing_create_payment_link)
+
+    r = client.post("/checkout-sessions", json={
+        "merchant_id": "shop_checkout_degrade", "agent_id": "degrade-agent",
+        "items": [{"id": "anything", "title": "Anything", "price": 1000, "category": "clothing", "quantity": 1}],
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["receipt"]["decision"] == "allow"
+    assert body["payment"] is None
+    assert "decision itself is final" in body["note"]
+
+    # The receipt was really saved despite the payment failure -- this
+    # isn't a response that lied about what happened.
+    receipts = client.get("/receipts", headers=auth, params={"merchant_id": "shop_checkout_degrade"}).json()
+    assert any(rc["agent_id"] == "degrade-agent" and rc["decision"] == "allow" for rc in receipts)

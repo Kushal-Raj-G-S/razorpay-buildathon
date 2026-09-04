@@ -451,11 +451,26 @@ async def checkout(req: CheckoutRequest, session: Session = Depends(get_session)
             # choice, not by an unnoticed default.
             result["order"] = {"status": "confirmed_cod", "note": "cash on delivery -- no payment link needed"}
         else:
-            payment = await create_payment_link(
-                amount_paise=cart.total,
-                description=f"Order {cart.id} via agent {req.agent_id}",
-            )
-            result["payment"] = payment
+            # The decision itself (ALLOW) is already signed and saved above --
+            # that's the actual product, the payment link is Razorpay
+            # integration layered on top of it. So a Razorpay failure here
+            # (the same real 429 that used to crash the escalation-review
+            # endpoint too, before that was fixed) degrades gracefully
+            # instead of turning an already-decided, already-persisted
+            # ALLOW into a bare 500: the receipt stands, `payment` comes
+            # back null, and the note says plainly what happened.
+            try:
+                payment = await create_payment_link(
+                    amount_paise=cart.total,
+                    description=f"Order {cart.id} via agent {req.agent_id}",
+                )
+                result["payment"] = payment
+            except httpx.HTTPError as e:
+                result["note"] = (
+                    f"Order allowed and signed, but Razorpay could not be reached to create "
+                    f"a payment link right now ({e}). The decision itself is final -- "
+                    f"contact the merchant to arrange payment."
+                )
 
     elif signed_receipt.decision.value == "escalate":
         escalation_id = repo.create_escalation(
